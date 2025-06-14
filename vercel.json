@@ -11,5 +11,7 @@
       "src": "/(.*)",
       "dest": "src/main.ts"
     }
-  ]
+  ],
+  "installCommand": "npm install --legacy-peer-deps",
+  "buildCommand": "npm run build"
 }
