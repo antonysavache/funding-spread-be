@@ -6,7 +6,8 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build",
+    "build": "nest build && npm run copy-dist",
+    "copy-dist": "mkdir public 2>nul & xcopy dist\\* public\\ /s /e /y 2>nul & exit 0",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main"

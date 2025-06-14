@@ -1,28 +1,55 @@
-import { createApp } from '../src/main';
-
-let cachedApp: any = null;
-
+// Простая тестовая версия без NestJS
 export default async function handler(req: any, res: any) {
   try {
-    // Используем кешированное приложение для уменьшения cold start
-    if (!cachedApp) {
-      console.log('🚀 Инициализация NestJS приложения...');
-      cachedApp = await createApp();
-      console.log('✅ NestJS приложение инициализировано');
-    }
+    console.log('🚀 API вызван:', req.method, req.url);
     
-    // Устанавливаем CORS заголовки для preflight запросов
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    
     if (req.method === 'OPTIONS') {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      res.setHeader('Access-Control-Max-Age', '86400');
       return res.status(200).end();
     }
 
-    return cachedApp(req, res);
+    // Простые роуты
+    if (req.url === '/' || req.url === '/api') {
+      return res.status(200).json({
+        name: 'Funding Rates API',
+        message: 'API работает на Vercel!',
+        timestamp: new Date().toISOString(),
+        endpoints: [
+          'GET /',
+          'GET /health', 
+          'GET /test'
+        ]
+      });
+    }
+    
+    if (req.url === '/health') {
+      return res.status(200).json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        platform: 'vercel'
+      });
+    }
+
+    if (req.url === '/test') {
+      return res.status(200).json({
+        message: 'Test endpoint works!',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 404 для остальных
+    return res.status(404).json({
+      error: 'Endpoint not found',
+      url: req.url,
+      availableEndpoints: ['/', '/health', '/test']
+    });
+    
   } catch (error) {
-    console.error('❌ Ошибка в обработчике Vercel:', error);
+    console.error('❌ Ошибка в API:', error);
     return res.status(500).json({ 
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error'
