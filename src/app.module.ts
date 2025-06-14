@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { FundingController } from './controllers/funding.controller';
@@ -11,7 +10,7 @@ import { OkxService } from './services/okx.service';
 import { ExchangeAggregatorService } from './services/exchange-aggregator.service';
 
 @Module({
-  imports: [HttpModule],
+  imports: [],
   controllers: [AppController, FundingController],
   providers: [
     AppService,

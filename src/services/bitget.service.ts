@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { Observable, forkJoin, of } from 'rxjs';
+import { Observable, forkJoin, of, from } from 'rxjs';
 import { map, catchError, timeout } from 'rxjs/operators';
+import axios from 'axios';
 import { BitGetAdapter, BitGetFundingResponse, BitGetTickerResponse } from '../adapters/bitget.adapter';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 
@@ -10,8 +10,6 @@ export class BitgetService {
   private readonly baseUrl = 'https://api.bitget.com';
   private readonly fundingEndpoint = '/api/mix/v1/market/current-fundRate';
   private readonly tickerEndpoint = '/api/mix/v1/market/ticker';
-
-  constructor(private readonly httpService: HttpService) {}
 
   getFundingData(): Observable<{ [ticker: string]: NormalizedTicker }> {
     console.log('🔄 BitGet: Начинаем загрузку funding данных...');
@@ -42,7 +40,7 @@ export class BitgetService {
   private getFundingRates(): Observable<any[]> {
     const url = `${this.baseUrl}${this.fundingEndpoint}?productType=umcbl`;
 
-    return this.httpService.get<BitGetFundingResponse>(url).pipe(
+    return from(axios.get<BitGetFundingResponse>(url)).pipe(
       timeout(10000),
       map(response => BitGetAdapter.isValidResponse(response.data) ? response.data.data : []),
       catchError(() => of([]))
@@ -52,7 +50,7 @@ export class BitgetService {
   private getTickerData(): Observable<any[]> {
     const url = `${this.baseUrl}${this.tickerEndpoint}?productType=umcbl`;
 
-    return this.httpService.get<BitGetTickerResponse>(url).pipe(
+    return from(axios.get<BitGetTickerResponse>(url)).pipe(
       timeout(10000),
       map(response => BitGetAdapter.isValidResponse(response.data) ? response.data.data : []),
       catchError(() => of([]))
@@ -61,7 +59,7 @@ export class BitgetService {
 
   checkApiHealth(): Observable<boolean> {
     const url = `${this.baseUrl}${this.tickerEndpoint}?productType=umcbl`;
-    return this.httpService.get(url).pipe(
+    return from(axios.get(url)).pipe(
       timeout(5000),
       map(() => true),
       catchError(() => of(false))

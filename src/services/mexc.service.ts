@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { Observable, of } from 'rxjs';
+import { Observable, of, from } from 'rxjs';
 import { map, catchError, timeout } from 'rxjs/operators';
+import axios from 'axios';
 import { MexcAdapter, MexcFundingResponse } from '../adapters/mexc.adapter';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 
@@ -10,14 +10,12 @@ export class MexcService {
   private readonly baseUrl = 'https://api.mexc.com';
   private readonly fundingEndpoint = '/api/v3/premiumIndex';
 
-  constructor(private readonly httpService: HttpService) {}
-
   getFundingData(): Observable<{ [ticker: string]: NormalizedTicker }> {
     console.log('🔄 MEXC: Начинаем загрузку funding данных...');
 
     const url = `${this.baseUrl}${this.fundingEndpoint}`;
 
-    return this.httpService.get<MexcFundingResponse[]>(url).pipe(
+    return from(axios.get<MexcFundingResponse[]>(url)).pipe(
       timeout(10000),
       map(response => {
         console.log(`✅ MEXC: Получено ${response.data.length} инструментов`);
@@ -53,7 +51,7 @@ export class MexcService {
 
     const url = `${this.baseUrl}${this.fundingEndpoint}?symbol=BTCUSDT`;
 
-    return this.httpService.get(url).pipe(
+    return from(axios.get(url)).pipe(
       timeout(5000),
       map(() => {
         console.log('✅ MEXC: API доступен');

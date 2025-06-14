@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { Observable, forkJoin, of } from 'rxjs';
+import { Observable, forkJoin, of, from } from 'rxjs';
 import { map, catchError, timeout } from 'rxjs/operators';
+import axios from 'axios';
 import { BybitAdapter, BybitFundingResponse, BybitTickerResponse } from '../adapters/bybit.adapter';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 
@@ -10,8 +10,6 @@ export class BybitService {
   private readonly baseUrl = 'https://api.bybit.com';
   private readonly fundingEndpoint = '/v5/market/funding/history';
   private readonly tickerEndpoint = '/v5/market/tickers';
-
-  constructor(private readonly httpService: HttpService) {}
 
   /**
    * Получает данные о funding rates с Bybit
@@ -42,32 +40,10 @@ export class BybitService {
         
         console.log(`🎯 Bybit: Успешно обработано ${tickers.length} тикеров:`, tickers.slice(0, 10));
         
-        // Логируем несколько примеров для отладки
-        tickers.slice(0, 3).forEach(ticker => {
-          const data = normalized[ticker];
-          console.log(`📊 Bybit ${ticker}:`, {
-            price: data.price,
-            fundingRate: (data.fundingRate * 100).toFixed(4) + '%',
-            nextFunding: new Date(data.nextFundingTime).toLocaleTimeString()
-          });
-        });
-
         return normalized;
       }),
       catchError(error => {
         console.error('❌ Bybit: Ошибка при получении данных:', error);
-        
-        let errorMessage = 'Неизвестная ошибка Bybit API';
-        
-        if (error.response?.status === 429) {
-          errorMessage = 'Bybit API: Превышен лимит запросов';
-        } else if (error.response?.status >= 500) {
-          errorMessage = 'Bybit API: Ошибка сервера';
-        } else if (error.code === 'ECONNREFUSED') {
-          errorMessage = 'Bybit API: Проблемы с сетью';
-        }
-
-        console.error(`💥 Bybit: ${errorMessage}`, error);
         return of({});
       })
     );
@@ -79,7 +55,7 @@ export class BybitService {
   private getFundingRates(): Observable<any[]> {
     const url = `${this.baseUrl}${this.fundingEndpoint}?category=linear&limit=200`;
 
-    return this.httpService.get<BybitFundingResponse>(url).pipe(
+    return from(axios.get<BybitFundingResponse>(url)).pipe(
       timeout(10000),
       map(response => {
         if (BybitAdapter.isValidResponse(response.data)) {
@@ -102,7 +78,7 @@ export class BybitService {
   private getTickerData(): Observable<any[]> {
     const url = `${this.baseUrl}${this.tickerEndpoint}?category=linear`;
 
-    return this.httpService.get<BybitTickerResponse>(url).pipe(
+    return from(axios.get<BybitTickerResponse>(url)).pipe(
       timeout(10000),
       map(response => {
         if (BybitAdapter.isValidResponse(response.data)) {
@@ -127,7 +103,7 @@ export class BybitService {
 
     const url = `${this.baseUrl}${this.tickerEndpoint}?category=linear&symbol=BTCUSDT`;
 
-    return this.httpService.get(url).pipe(
+    return from(axios.get(url)).pipe(
       timeout(5000),
       map(() => {
         console.log('✅ Bybit: API доступен');

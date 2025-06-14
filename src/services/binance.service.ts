@@ -1,7 +1,7 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { Observable, forkJoin, of } from 'rxjs';
+import { Observable, forkJoin, of, from } from 'rxjs';
 import { map, catchError, timeout } from 'rxjs/operators';
+import axios from 'axios';
 import { BinanceAdapter } from '../adapters/binance.adapter';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 
@@ -10,8 +10,6 @@ export class BinanceService {
   private readonly baseUrl = 'https://fapi.binance.com';
   private readonly exchangeInfoEndpoint = '/fapi/v1/exchangeInfo';
   private readonly premiumIndexEndpoint = '/fapi/v1/premiumIndex';
-
-  constructor(private readonly httpService: HttpService) {}
 
   /**
    * Получает данные о funding rates с Binance
@@ -50,18 +48,6 @@ export class BinanceService {
       }),
       catchError(error => {
         console.error('❌ Binance: Ошибка при получении данных:', error);
-        
-        let errorMessage = 'Неизвестная ошибка Binance API';
-        
-        if (error.response?.status === 429) {
-          errorMessage = 'Binance API: Превышен лимит запросов';
-        } else if (error.response?.status >= 500) {
-          errorMessage = 'Binance API: Ошибка сервера';
-        } else if (error.code === 'ECONNREFUSED') {
-          errorMessage = 'Binance API: Проблемы с сетью';
-        }
-
-        console.error(`💥 Binance: ${errorMessage}`, error);
         return of({});
       })
     );
@@ -73,12 +59,12 @@ export class BinanceService {
   private getExchangeInfo(): Observable<any> {
     const url = `${this.baseUrl}${this.exchangeInfoEndpoint}`;
 
-    return this.httpService.get(url).pipe(
+    return from(axios.get(url)).pipe(
       timeout(10000),
       map(response => response.data),
       catchError(error => {
         console.error('Binance: Ошибка получения exchange info:', error);
-        throw new HttpException('Ошибка получения данных с Binance', HttpStatus.SERVICE_UNAVAILABLE);
+        return of({ symbols: [] });
       })
     );
   }
@@ -89,12 +75,12 @@ export class BinanceService {
   private getPremiumIndex(): Observable<any> {
     const url = `${this.baseUrl}${this.premiumIndexEndpoint}`;
 
-    return this.httpService.get(url).pipe(
+    return from(axios.get(url)).pipe(
       timeout(10000),
       map(response => response.data),
       catchError(error => {
         console.error('Binance: Ошибка получения premium index:', error);
-        throw new HttpException('Ошибка получения funding данных с Binance', HttpStatus.SERVICE_UNAVAILABLE);
+        return of([]);
       })
     );
   }
@@ -107,7 +93,7 @@ export class BinanceService {
 
     const url = `${this.baseUrl}${this.exchangeInfoEndpoint}`;
 
-    return this.httpService.get(url).pipe(
+    return from(axios.get(url)).pipe(
       timeout(5000),
       map(() => {
         console.log('✅ Binance: API доступен');
