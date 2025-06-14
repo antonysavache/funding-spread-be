@@ -1,0 +1,13 @@
+# Игнорируем файлы, которые не нужны в production
+.env.local
+.env.development
+.git/
+.gitignore
+README.md
+docs/
+test/
+*.spec.ts
+*.test.ts
+coverage/
+node_modules/@types/
+src/**/*.spec.ts

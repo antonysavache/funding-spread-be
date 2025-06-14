@@ -2,16 +2,30 @@
   "version": 2,
   "builds": [
     {
-      "src": "src/main.ts",
-      "use": "@vercel/node"
+      "src": "api/index.ts",
+      "use": "@vercel/node",
+      "config": {
+        "maxLambdaSize": "50mb",
+        "includeFiles": "src/**",
+        "excludeFiles": ["**/*.spec.ts", "**/*.test.ts", "test/**"]
+      }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "src/main.ts"
+      "dest": "/api/index.ts"
     }
   ],
-  "installCommand": "npm install --legacy-peer-deps",
-  "buildCommand": "npm run build"
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    }
+  },
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "regions": ["iad1"],
+  "cleanUrls": true
 }

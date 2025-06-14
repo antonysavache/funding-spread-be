@@ -13,6 +13,7 @@ export class AppController {
       description: 'API для агрегации funding rates с криптовалютных бирж',
       endpoints: {
         'GET /': 'Информация об API',
+        'GET /health': 'Проверка здоровья сервиса',
         'GET /api/funding/all': 'Данные со всех бирж',
         'GET /api/funding/summaries': 'Сводная таблица по тикерам',
         'GET /api/funding/arbitrage?minDelta=0.001': 'Арбитражные возможности',
@@ -22,6 +23,16 @@ export class AppController {
       },
       exchanges: ['Binance', 'Bybit', 'BitGet', 'MEXC', 'OKX'],
       timestamp: new Date().toISOString()
+    };
+  }
+
+  @Get('health')
+  getHealth() {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development'
     };
   }
 
