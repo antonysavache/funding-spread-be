@@ -1,125 +1,445 @@
+// Контракты OKX API v5
+interface OKXFundingRate {
+  instId: string;          // Instrument ID - символ
+  fundingRate: string;     // Current funding rate
+  nextFundingRate?: string; // Next funding rate
+  fundingTime: string;     // Next funding time timestamp
+}
+
+interface OKXMarkPrice {
+  instId: string;     // Instrument ID
+  markPx: string;     // Mark price
+  ts: string;         // Timestamp
+}
+
+interface OKXTicker {
+  instId: string;     // Instrument ID
+  last: string;       // Last traded price
+  markPx?: string;    // Mark price (может отсутствовать)
+  idxPx?: string;     // Index price  
+  fundingRate?: string; // может отсутствовать
+  nextFundingRate?: string; // может отсутствовать
+  fundingTime?: string; // может отсутствовать
+  ts: string;         // Timestamp
+  // Дополнительные поля из реального API
+  lastSz?: string;
+  askPx?: string;
+  askSz?: string;
+  bidPx?: string;
+  bidSz?: string;
+  open24h?: string;
+  high24h?: string;
+  low24h?: string;
+  volCcy24h?: string;
+  vol24h?: string;
+  sodUtc0?: string;
+  sodUtc8?: string;
+}
+
+interface OKXFundingResponse {
+  code: string;
+  msg: string;
+  data: OKXFundingRate[];
+}
+
+interface OKXMarkPriceResponse {
+  code: string;
+  msg: string;
+  data: OKXMarkPrice[];
+}
+
+interface OKXTickersResponse {
+  code: string;
+  msg: string;
+  data: OKXTicker[];
+}
+
+// Импортируем интерфейс
 import { NormalizedTicker } from './normalized-ticker.interface';
 
-export interface OkxFundingResponse {
-  code: string;
-  msg: string;
-  data: OkxFundingData[];
-}
+export class OKXAdapter {
 
-export interface OkxFundingData {
-  instType: string;
-  instId: string;
-  fundingRate: string;
-  nextFundingTime: string;
-  fundingTime: string;
-  markPx?: string;
-}
-
-export interface OkxMarkPriceResponse {
-  code: string;
-  msg: string;
-  data: OkxMarkPriceData[];
-}
-
-export interface OkxMarkPriceData {
-  instType: string;
-  instId: string;
-  markPx: string;
-  ts: string;
-}
-
-export class OkxAdapter {
-  
   /**
-   * Нормализует ответ OKX к общему формату
+   * Нормализует данные OKX v5 API в единый формат
+   * Использует tickers endpoint который содержит и цены и funding rates
    */
-  static normalize(
-    fundingData: OkxFundingData[], 
-    markPriceData: OkxMarkPriceData[]
-  ): { [ticker: string]: NormalizedTicker } {
-    const normalized: { [ticker: string]: NormalizedTicker } = {};
+  static normalize(tickersResponse: OKXTickersResponse): { [ticker: string]: NormalizedTicker } {
 
-    // Создаем Map для быстрого поиска mark price
-    const markPriceMap = new Map(
-      markPriceData.map(item => [item.instId, parseFloat(item.markPx)])
-    );
+    if (!tickersResponse.data || !Array.isArray(tickersResponse.data)) {
+      console.warn('OKX: пустой ответ от API');
+      return {};
+    }
 
-    fundingData.forEach(item => {
-      // Извлекаем базовую валюту из символа (например, BTC-USDT-SWAP -> BTC)
-      const ticker = this.extractBaseCurrency(item.instId);
-      const markPrice = markPriceMap.get(item.instId);
+    const result: { [ticker: string]: NormalizedTicker } = {};
+    console.log(`🔍 OKX адаптер: анализируем ${tickersResponse.data.length} элементов...`);
+
+    tickersResponse.data.forEach((ticker, index) => {
+      const standardSymbol = this.convertOKXSymbol(ticker.instId);
       
-      if (ticker && markPrice && markPrice > 0) {
-        normalized[ticker] = {
-          ticker: ticker,
-          price: markPrice,
-          fundingRate: parseFloat(item.fundingRate),
-          nextFundingTime: parseInt(item.nextFundingTime, 10)
+      // Добавляем отладочные логи для первых элементов
+      if (index < 3) {
+        console.log(`🔍 OKX адаптер: элемент ${index + 1}:`, {
+          instId: ticker.instId,
+          standardSymbol: standardSymbol,
+          hasInstId: !!ticker.instId,
+          endsWithUSDT: standardSymbol?.endsWith('USDT'),
+          hasFundingRate: !!ticker.fundingRate,
+          hasMarkPx: !!ticker.markPx,
+          hasLast: !!ticker.last,
+          hasFundingTime: !!ticker.fundingTime,
+          fundingRateValue: ticker.fundingRate,
+          markPxValue: ticker.markPx,
+          lastValue: ticker.last
+        });
+      }
+      
+      // Фильтруем только USDT перпетуалы с валидными данными
+      if (
+        standardSymbol &&
+        standardSymbol.endsWith('USDT') &&
+        this.isValidTicker(standardSymbol) &&
+        ticker.fundingRate !== undefined &&
+        (ticker.markPx || ticker.last)
+      ) {
+        const fundingRate = parseFloat(ticker.fundingRate) || 0;
+        const price = parseFloat(ticker.markPx || ticker.last);
+        const nextFundingTime = ticker.fundingTime ? 
+          this.parseOKXTimestamp(ticker.fundingTime) : 
+          this.calculateNextFundingTime();
+
+        result[standardSymbol] = {
+          ticker: standardSymbol,
+          price: price,
+          fundingRate: fundingRate,
+          nextFundingTime: nextFundingTime
         };
+
+        if (index < 10) {
+          console.log(`✅ OKX адаптер: добавили ${standardSymbol}:`, {
+            price,
+            fundingRate: (fundingRate * 100).toFixed(4) + '%',
+            nextFunding: new Date(nextFundingTime).toLocaleTimeString()
+          });
+        }
+      } else if (index < 3) {
+        console.log(`❌ OKX адаптер: пропускаем ${ticker.instId} -> ${standardSymbol} - не прошел фильтрацию`);
       }
     });
 
-    console.log(`OKX адаптер: обработано ${Object.keys(normalized).length} тикеров`);
-    return normalized;
+    console.log(`OKX адаптер: обработано ${Object.keys(result).length} тикеров`);
+    return result;
   }
 
   /**
-   * Извлекает базовую валюту из символа OKX
+   * Альтернативная нормализация с отдельными endpoints
    */
-  private static extractBaseCurrency(instId: string): string | null {
-    // OKX использует формат BASE-USDT-SWAP для USDT перпетуалов
-    if (instId.includes('-USDT-SWAP')) {
-      return instId.split('-')[0];
-    }
+  static normalizeFundingRates(
+    fundingResponse: OKXFundingResponse,
+    tickersResponse: OKXTickersResponse
+  ): { [ticker: string]: NormalizedTicker } {
     
-    if (instId.includes('-USDC-SWAP')) {
-      return instId.split('-')[0];
+    if (!fundingResponse.data || !tickersResponse.data) {
+      console.warn('OKX: пустые данные от API');
+      return {};
     }
 
-    if (instId.includes('-USD-SWAP')) {
-      return instId.split('-')[0];
+    console.log(`🔍 OKX адаптер: анализируем ${fundingResponse.data.length} funding rates и ${tickersResponse.data.length} тикеров...`);
+
+    // Создаем карту цен по стандартным символам
+    const priceMap = new Map<string, OKXTicker>();
+    tickersResponse.data.forEach((ticker, index) => {
+      const standardSymbol = this.convertOKXSymbol(ticker.instId);
+      if (standardSymbol) {
+        priceMap.set(standardSymbol, ticker);
+        if (index < 3) {
+          console.log(`🔍 OKX цены: ${ticker.instId} -> ${standardSymbol}, цена: ${ticker.last}`);
+        }
+      }
+    });
+
+    // Создаем карту funding rates по стандартным символам
+    const fundingMap = new Map<string, OKXFundingRate>();
+    fundingResponse.data.forEach((funding, index) => {
+      const standardSymbol = this.convertOKXSymbol(funding.instId);
+      if (standardSymbol) {
+        fundingMap.set(standardSymbol, funding);
+        if (index < 3) {
+          console.log(`🔍 OKX funding: ${funding.instId} -> ${standardSymbol}, rate: ${funding.fundingRate}, time: ${funding.fundingTime}`);
+        }
+      }
+    });
+
+    const result: { [ticker: string]: NormalizedTicker } = {};
+
+    fundingResponse.data.forEach((funding, index) => {
+      const standardSymbol = this.convertOKXSymbol(funding.instId);
+      const ticker = priceMap.get(standardSymbol || '');
+      
+      if (index < 3) {
+        console.log(`🔍 OKX адаптер: элемент ${index + 1}:`, {
+          instId: funding.instId,
+          standardSymbol: standardSymbol,
+          hasStandardSymbol: !!standardSymbol,
+          endsWithUSDT: standardSymbol?.endsWith('USDT'),
+          hasFundingRate: !!funding.fundingRate,
+          hasTicker: !!ticker,
+          hasPrice: !!(ticker?.last),
+          fundingRateValue: funding.fundingRate,
+          priceValue: ticker?.last
+        });
+      }
+      
+      if (
+        standardSymbol &&
+        ticker &&
+        standardSymbol.endsWith('USDT') &&
+        this.isValidTicker(standardSymbol) &&
+        funding.fundingRate !== undefined &&
+        ticker.last
+      ) {
+        const fundingRate = parseFloat(funding.fundingRate) || 0;
+        const price = parseFloat(ticker.last);
+        const nextFundingTime = funding.fundingTime ? 
+          this.parseOKXTimestamp(funding.fundingTime) : 
+          this.calculateNextFundingTime();
+
+        result[standardSymbol] = {
+          ticker: standardSymbol,
+          price: price,
+          fundingRate: fundingRate,
+          nextFundingTime: nextFundingTime
+        };
+
+        if (index < 10) {
+          console.log(`✅ OKX адаптер: добавили ${standardSymbol}:`, {
+            price,
+            fundingRate: (fundingRate * 100).toFixed(4) + '%',
+            nextFunding: new Date(nextFundingTime).toLocaleTimeString()
+          });
+        }
+      } else if (index < 3) {
+        console.log(`❌ OKX адаптер: пропускаем ${funding.instId} -> ${standardSymbol} - не прошел фильтрацию`);
+      }
+    });
+
+    console.log(`OKX адаптер (funding): обработано ${Object.keys(result).length} тикеров`);
+    return result;
+  }
+
+  /**
+   * Конвертирует OKX формат символа в стандартный
+   * BTC-USDT-SWAP -> BTCUSDT
+   * ETH-USDT-SWAP -> ETHUSDT
+   */
+  private static convertOKXSymbol(okxSymbol: string): string | null {
+    if (!okxSymbol) return null;
+
+    // Удаляем суффикс -SWAP и заменяем - на пустую строку
+    const cleaned = okxSymbol.replace('-SWAP', '').replace('-', '');
+    
+    // Проверяем что получился валидный символ
+    if (cleaned.endsWith('USDT') && cleaned.length > 4) {
+      return cleaned;
     }
 
-    console.warn(`OKX: Неизвестный формат инструмента: ${instId}`);
     return null;
   }
 
   /**
-   * Проверяет, является ли инструмент валидным USDT перпетуалом
+   * Проверяет что тикер в правильном формате XXXUSDT
    */
-  static isValidUsdtSwap(instId: string): boolean {
-    if (!instId || instId.length === 0) {
-      return false;
+  private static isValidTicker(ticker: string): boolean {
+    const regex = /^[A-Z0-9]+USDT$/;
+    return regex.test(ticker) && ticker.length > 4;
+  }
+
+  /**
+   * Парсит timestamp OKX (обычно в миллисекундах)
+   */
+  private static parseOKXTimestamp(timestamp: string): number {
+    if (!timestamp) {
+      return this.calculateNextFundingTime();
     }
+
+    const ts = parseInt(timestamp);
+    if (!isNaN(ts)) {
+      // OKX возвращает timestamp в миллисекундах
+      return ts;
+    }
+
+    return this.calculateNextFundingTime();
+  }
+
+  /**
+   * Нормализует данные mark-price endpoint с учетом funding rates
+   */
+  static normalizeMarkPriceWithFunding(
+    markPriceResponse: OKXMarkPriceResponse, 
+    fundingData: {[instId: string]: any}
+  ): { [ticker: string]: NormalizedTicker } {
     
-    return instId.endsWith('-USDT-SWAP') && 
-           instId.split('-').length === 3 &&
-           instId.split('-')[0].length > 0;
+    if (!markPriceResponse.data || !Array.isArray(markPriceResponse.data)) {
+      console.warn('OKX: пустой ответ от mark-price API');
+      return {};
+    }
+
+    console.log(`🔍 OKX адаптер: анализируем ${markPriceResponse.data.length} mark prices с funding data...`);
+    console.log('🔍 OKX адаптер: funding data keys:', Object.keys(fundingData));
+
+    const result: { [ticker: string]: NormalizedTicker } = {};
+
+    markPriceResponse.data.forEach((markPrice, index) => {
+      const standardSymbol = this.convertOKXSymbol(markPrice.instId);
+      
+      // Добавляем отладочные логи для первых элементов
+      if (index < 3) {
+        console.log(`🔍 OKX mark-price+funding: элемент ${index + 1}:`, {
+          instId: markPrice.instId,
+          standardSymbol: standardSymbol,
+          hasInstId: !!markPrice.instId,
+          endsWithUSDT: standardSymbol?.endsWith('USDT'),
+          hasMarkPx: !!markPrice.markPx,
+          markPxValue: markPrice.markPx,
+          hasFundingData: !!fundingData[markPrice.instId]
+        });
+
+        if (fundingData[markPrice.instId]) {
+          console.log(`🔍 OKX funding info for ${markPrice.instId}:`, fundingData[markPrice.instId]);
+        }
+      }
+      
+      // Фильтруем только USDT перпетуалы с валидными данными
+      if (
+        standardSymbol &&
+        standardSymbol.endsWith('USDT') &&
+        this.isValidTicker(standardSymbol) &&
+        markPrice.markPx
+      ) {
+        const price = parseFloat(markPrice.markPx);
+        
+        // Получаем funding rate из отдельного запроса или используем 0
+        const fundingInfo = fundingData[markPrice.instId];
+        let fundingRate = 0;
+        let nextFundingTime = this.calculateNextFundingTime();
+        
+        if (fundingInfo && fundingInfo.fundingRate) {
+          fundingRate = parseFloat(fundingInfo.fundingRate) || 0;
+        }
+        
+        if (fundingInfo && fundingInfo.fundingTime) {
+          nextFundingTime = parseInt(fundingInfo.fundingTime) || this.calculateNextFundingTime();
+        }
+
+        result[standardSymbol] = {
+          ticker: standardSymbol,
+          price: price,
+          fundingRate: fundingRate,
+          nextFundingTime: nextFundingTime
+        };
+
+        if (index < 10) {
+          console.log(`✅ OKX mark-price+funding: добавили ${standardSymbol}:`, {
+            price,
+            fundingRate: (fundingRate * 100).toFixed(4) + '%',
+            nextFunding: new Date(nextFundingTime).toLocaleTimeString()
+          });
+        }
+      } else if (index < 3) {
+        console.log(`❌ OKX mark-price+funding: пропускаем ${markPrice.instId} -> ${standardSymbol} - не прошел фильтрацию`);
+      }
+    });
+
+    console.log(`OKX адаптер (mark-price+funding): обработано ${Object.keys(result).length} тикеров`);
+    return result;
   }
 
   /**
-   * Фильтрует только USDT перпетуальные свопы
+   * Нормализует данные mark-price endpoint
+   * Mark price endpoint может содержать только цены, без funding rates
+   * В этом случае используем нулевые funding rates
    */
-  static filterUsdtSwaps(fundingData: OkxFundingData[]): OkxFundingData[] {
-    return fundingData.filter(item => 
-      item.instType === 'SWAP' &&
-      this.isValidUsdtSwap(item.instId) &&
-      parseFloat(item.fundingRate) !== 0 &&
-      parseInt(item.nextFundingTime, 10) > 0
-    );
+  static normalizeMarkPrice(markPriceResponse: OKXMarkPriceResponse): { [ticker: string]: NormalizedTicker } {
+    
+    if (!markPriceResponse.data || !Array.isArray(markPriceResponse.data)) {
+      console.warn('OKX: пустой ответ от mark-price API');
+      return {};
+    }
+
+    console.log(`🔍 OKX адаптер: анализируем ${markPriceResponse.data.length} mark prices...`);
+
+    const result: { [ticker: string]: NormalizedTicker } = {};
+
+    markPriceResponse.data.forEach((markPrice, index) => {
+      const standardSymbol = this.convertOKXSymbol(markPrice.instId);
+      
+      // Добавляем отладочные логи для первых элементов
+      if (index < 3) {
+        console.log(`🔍 OKX mark-price: элемент ${index + 1}:`, {
+          instId: markPrice.instId,
+          standardSymbol: standardSymbol,
+          hasInstId: !!markPrice.instId,
+          endsWithUSDT: standardSymbol?.endsWith('USDT'),
+          hasMarkPx: !!markPrice.markPx,
+          markPxValue: markPrice.markPx
+        });
+      }
+      
+      // Фильтруем только USDT перпетуалы с валидными данными
+      if (
+        standardSymbol &&
+        standardSymbol.endsWith('USDT') &&
+        this.isValidTicker(standardSymbol) &&
+        markPrice.markPx
+      ) {
+        const price = parseFloat(markPrice.markPx);
+        const fundingRate = 0; // Mark price endpoint не содержит funding rate, используем 0
+        const nextFundingTime = this.calculateNextFundingTime();
+
+        result[standardSymbol] = {
+          ticker: standardSymbol,
+          price: price,
+          fundingRate: fundingRate,
+          nextFundingTime: nextFundingTime
+        };
+
+        if (index < 10) {
+          console.log(`✅ OKX mark-price: добавили ${standardSymbol}:`, {
+            price,
+            fundingRate: (fundingRate * 100).toFixed(4) + '%',
+            nextFunding: new Date(nextFundingTime).toLocaleTimeString()
+          });
+        }
+      } else if (index < 3) {
+        console.log(`❌ OKX mark-price: пропускаем ${markPrice.instId} -> ${standardSymbol} - не прошел фильтрацию`);
+      }
+    });
+
+    console.log(`OKX адаптер (mark-price): обработано ${Object.keys(result).length} тикеров`);
+    return result;
   }
 
   /**
-   * Проверяет валидность ответа OKX API
+   * Вычисляет время следующего funding для OKX (каждые 8 часов: 00:00, 08:00, 16:00 UTC)
    */
-  static isValidResponse(response: OkxFundingResponse | OkxMarkPriceResponse): boolean {
-    return response && response.code === '0' && Array.isArray(response.data);
-  }
+  private static calculateNextFundingTime(): number {
+    const now = new Date();
+    const currentHour = now.getUTCHours();
+    let nextFundingHour: number;
 
-  /**
-   * Форматирует символ для запроса к OKX API
-   */
-  static formatSymbolForApi(baseSymbol: string): string {
-    return `${baseSymbol}-USDT-SWAP`;
+    if (currentHour < 8) {
+      nextFundingHour = 8;
+    } else if (currentHour < 16) {
+      nextFundingHour = 16;
+    } else {
+      nextFundingHour = 24; // 00:00 следующего дня
+    }
+
+    const nextFundingTime = new Date(now);
+    nextFundingTime.setUTCHours(nextFundingHour % 24, 0, 0, 0);
+    if (nextFundingHour === 24) {
+      nextFundingTime.setUTCDate(nextFundingTime.getUTCDate() + 1);
+    }
+
+    return nextFundingTime.getTime();
   }
 }

@@ -2,7 +2,9 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { ExchangeAggregatorService } from '../services/exchange-aggregator.service';
-import { AggregatedData, TickerSummary } from '../adapters/normalized-ticker.interface';
+import { AggregatedNormalizedData } from '../services/exchange-aggregator.service';
+import { GetDataResponse, Exchange, TickerData } from '../interfaces/get-data-response.interface';
+import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 
 @Controller('api/funding')
 export class FundingController {
@@ -12,11 +14,53 @@ export class FundingController {
   ) {}
 
   /**
+   * GET /api/funding/getData
+   * Получает данные со всех бирж в новом формате
+   */
+  @Get('getData')
+  getData(): Observable<GetDataResponse> {
+    return this.exchangeAggregatorService.getAllNormalizedData().pipe(
+      map(data => {
+        const result: GetDataResponse = {
+          binance: {},
+          bybit: {},
+          bitget: {},
+          bingx: {},
+          mexc: {}
+        };
+
+        // Трансформируем данные в нужный формат
+        Object.entries(data).forEach(([exchangeName, exchangeData]) => {
+          const exchange: Exchange = {};
+          
+          Object.entries(exchangeData).forEach(([ticker, tickerData]: [string, NormalizedTicker]) => {
+            exchange[ticker] = {
+              price: tickerData.price,
+              fundingRate: tickerData.fundingRate,
+              nextFundingTime: tickerData.nextFundingTime,
+              exchange: exchangeName
+            };
+          });
+
+          // Присваиваем данные соответствующей бирже
+          if (exchangeName === 'binance') result.binance = exchange;
+          else if (exchangeName === 'bybit') result.bybit = exchange;
+          else if (exchangeName === 'bitget') result.bitget = exchange;
+          else if (exchangeName === 'bingx') result.bingx = exchange;
+          else if (exchangeName === 'mexc') result.mexc = exchange;
+        });
+
+        return result;
+      })
+    );
+  }
+
+  /**
    * GET /api/funding/all
    * Получает данные со всех бирж
    */
   @Get('all')
-  getAllFundingData(): Observable<AggregatedData> {
+  getAllFundingData(): Observable<AggregatedNormalizedData> {
     return this.exchangeAggregatorService.getAllNormalizedData();
   }
 
@@ -25,8 +69,37 @@ export class FundingController {
    * Получает сводную таблицу по всем тикерам
    */
   @Get('summaries')
-  getTickerSummaries(): Observable<TickerSummary[]> {
-    return this.exchangeAggregatorService.getTickerSummaries();
+  getTickerSummaries(): Observable<any[]> {
+    return this.exchangeAggregatorService.getAllNormalizedData().pipe(
+      map(data => {
+        // Создаем сводку тикеров
+        const allTickers = new Set<string>();
+        Object.values(data).forEach(exchangeData => {
+          Object.keys(exchangeData).forEach(ticker => allTickers.add(ticker));
+        });
+
+        const summaries = Array.from(allTickers).map(ticker => {
+          const summary: any = {
+            ticker,
+            exchanges: {}
+          };
+
+          Object.entries(data).forEach(([exchange, exchangeData]) => {
+            if (exchangeData[ticker]) {
+              summary.exchanges[exchange] = {
+                price: exchangeData[ticker].price,
+                fundingRate: exchangeData[ticker].fundingRate,
+                nextFundingTime: exchangeData[ticker].nextFundingTime
+              };
+            }
+          });
+
+          return summary;
+        });
+
+        return summaries.sort((a, b) => a.ticker.localeCompare(b.ticker));
+      })
+    );
   }
 
   /**
@@ -34,19 +107,18 @@ export class FundingController {
    * Получает арбитражные возможности
    */
   @Get('arbitrage')
-  getArbitrageOpportunities(@Query('minDelta') minDelta?: string): Observable<TickerSummary[]> {
-    const minDeltaValue = minDelta ? parseFloat(minDelta) : 0;
+  getArbitrageOpportunities(@Query('minDelta') minDelta?: string): Observable<any[]> {
+    const minDeltaValue = minDelta ? parseFloat(minDelta) : 0.001;
     return this.exchangeAggregatorService.getArbitrageOpportunities(minDeltaValue);
   }
 
   /**
-   * GET /api/funding/different-payout-times?fundingAbsFilter=0.2
+   * GET /api/funding/different-payout-times
    * Получает тикеры с разным временем выплат
    */
   @Get('different-payout-times')
-  getDifferentPayoutTimes(@Query('fundingAbsFilter') fundingAbsFilter?: string): Observable<TickerSummary[]> {
-    const fundingAbsValue = fundingAbsFilter ? parseFloat(fundingAbsFilter) : 0;
-    return this.exchangeAggregatorService.getDifferentPayoutTimes(fundingAbsValue);
+  getDifferentPayoutTimes(): Observable<any[]> {
+    return this.exchangeAggregatorService.getDifferentPayoutTimes();
   }
 
   /**
@@ -55,7 +127,15 @@ export class FundingController {
    */
   @Get('health')
   checkApisHealth(): Observable<{[exchange: string]: boolean}> {
-    return this.exchangeAggregatorService.checkAllApisHealth();
+    return this.exchangeAggregatorService.getAllNormalizedData().pipe(
+      map(data => ({
+        binance: Object.keys(data.binance).length > 0,
+        bybit: Object.keys(data.bybit).length > 0,
+        bitget: Object.keys(data.bitget).length > 0,
+        mexc: Object.keys(data.mexc).length > 0,
+        bingx: Object.keys(data.bingx).length > 0,
+      }))
+    );
   }
 
   /**
@@ -88,9 +168,9 @@ export class FundingController {
             tickersCount: Object.keys(data.mexc).length,
             status: 'active'
           },
-          okx: {
-            name: 'OKX',
-            tickersCount: Object.keys(data.okx).length,
+          bingx: {
+            name: 'BingX',
+            tickersCount: Object.keys(data.bingx).length,
             status: 'active'
           }
         },
@@ -99,7 +179,7 @@ export class FundingController {
           ...Object.keys(data.bybit),
           ...Object.keys(data.bitget),
           ...Object.keys(data.mexc),
-          ...Object.keys(data.okx)
+          ...Object.keys(data.bingx)
         ]).size
       }))
     );

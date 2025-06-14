@@ -1,66 +1,70 @@
-import { Injectable } from '@nestjs/common';
-import { Observable, of, from } from 'rxjs';
-import { map, catchError, timeout } from 'rxjs/operators';
+import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
-import { MexcAdapter, MexcFundingResponse } from '../adapters/mexc.adapter';
+import { MexcAdapter, MexcContractTickersResponse } from '../adapters/mexc.adapter';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
+
+interface Exchange {
+  [ticker: string] : {
+    ticker: string;
+    price: number;
+    fundingRate: number;
+    nextFundingTime: number;
+    exchange: string;
+  }
+}
+
+interface Response {
+  binance: Exchange;
+  bybit: Exchange;
+  bitget: Exchange;
+  bingx: Exchange;
+  okx: Exchange;
+  mexc: Exchange;
+}
+
 
 @Injectable()
 export class MexcService {
-  private readonly baseUrl = 'https://api.mexc.com';
-  private readonly fundingEndpoint = '/api/v3/premiumIndex';
+  private readonly logger = new Logger(MexcService.name);
+  private readonly baseUrl = 'https://contract.mexc.com';
+  private readonly contractTickersEndpoint = '/api/v1/contract/ticker';
 
-  getFundingData(): Observable<{ [ticker: string]: NormalizedTicker }> {
-    console.log('🔄 MEXC: Начинаем загрузку funding данных...');
+  /**
+   * Получает данные о funding rates с MEXC используя правильный contract API
+   */
+  async getFundingData(): Promise<{ [ticker: string]: NormalizedTicker }> {
 
-    const url = `${this.baseUrl}${this.fundingEndpoint}`;
+    try {
+      // Используем правильный contract API endpoint
+      const url = `${this.baseUrl}${this.contractTickersEndpoint}`;
 
-    return from(axios.get<MexcFundingResponse[]>(url)).pipe(
-      timeout(10000),
-      map(response => {
-        console.log(`✅ MEXC: Получено ${response.data.length} инструментов`);
+      const response = await axios.get<MexcContractTickersResponse>(url, { timeout: 10000 });
+      
 
-        const filteredData = MexcAdapter.filterUsdtPerpetuals(response.data);
-        console.log(`🔍 MEXC: После фильтрации USDT перпетуалов: ${filteredData.length} инструментов`);
+      if (!response.data.success) {
+        throw new Error(`MEXC Contract API error: ${response.data.code}`);
+      }
 
-        const normalized = MexcAdapter.normalize(filteredData);
-        const tickers = Object.keys(normalized);
-        
-        console.log(`🎯 MEXC: Успешно обработано ${tickers.length} тикеров`);
-        
-        tickers.slice(0, 3).forEach(ticker => {
-          const data = normalized[ticker];
-          console.log(`📊 MEXC ${ticker}:`, {
-            price: data.price,
-            fundingRate: (data.fundingRate * 100).toFixed(4) + '%',
-            nextFunding: new Date(data.nextFundingTime).toLocaleTimeString()
-          });
-        });
 
-        return normalized;
-      }),
-      catchError(error => {
-        console.error('❌ MEXC: Ошибка при получении данных:', error);
-        return of({});
-      })
-    );
-  }
+      // Фильтруем только USDT контракты
+      const filteredData = MexcAdapter.filterUsdtContracts(response.data);
 
-  checkApiHealth(): Observable<boolean> {
-    console.log('🏥 MEXC: Проверяем здоровье API...');
+      // Нормализуем данные
+      const normalized = MexcAdapter.normalize(response.data);
+      const tickers = Object.keys(normalized);
+      
 
-    const url = `${this.baseUrl}${this.fundingEndpoint}?symbol=BTCUSDT`;
+      // Логируем несколько примеров для отладки
+      tickers.slice(0, 3).forEach(ticker => {
+        const data = normalized[ticker];
 
-    return from(axios.get(url)).pipe(
-      timeout(5000),
-      map(() => {
-        console.log('✅ MEXC: API доступен');
-        return true;
-      }),
-      catchError(error => {
-        console.error('❌ MEXC: API недоступен:', error);
-        return of(false);
-      })
-    );
+      });
+
+      return normalized;
+    } catch (error) {
+
+      // Возвращаем пустой объект вместо ошибки, чтобы не ломать общую загрузку
+      return {};
+    }
   }
 }

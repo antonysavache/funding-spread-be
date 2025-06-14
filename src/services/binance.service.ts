@@ -15,7 +15,6 @@ export class BinanceService {
    * Получает данные о funding rates с Binance
    */
   getFundingData(): Observable<{ [ticker: string]: NormalizedTicker }> {
-    console.log('🔄 Binance: Начинаем загрузку funding данных...');
 
     // Получаем данные параллельно
     const exchangeInfo$ = this.getExchangeInfo();
@@ -26,22 +25,16 @@ export class BinanceService {
       premiumIndex: premiumIndex$
     }).pipe(
       map(({ exchangeInfo, premiumIndex }) => {
-        console.log(`✅ Binance: Получено ${exchangeInfo.symbols.length} символов и ${premiumIndex.length} premium indices`);
 
         // Нормализуем данные
         const normalized = BinanceAdapter.normalize(exchangeInfo, premiumIndex);
         const tickers = Object.keys(normalized);
         
-        console.log(`🎯 Binance: Успешно обработано ${tickers.length} тикеров:`, tickers.slice(0, 10));
-        
+
         // Логируем несколько примеров для отладки
         tickers.slice(0, 3).forEach(ticker => {
           const data = normalized[ticker];
-          console.log(`📊 Binance ${ticker}:`, {
-            price: data.price,
-            fundingRate: (data.fundingRate * 100).toFixed(4) + '%',
-            nextFunding: new Date(data.nextFundingTime).toLocaleTimeString()
-          });
+
         });
 
         return normalized;
@@ -89,14 +82,12 @@ export class BinanceService {
    * Проверяет доступность API Binance
    */
   checkApiHealth(): Observable<boolean> {
-    console.log('🏥 Binance: Проверяем здоровье API...');
 
     const url = `${this.baseUrl}${this.exchangeInfoEndpoint}`;
 
     return from(axios.get(url)).pipe(
       timeout(5000),
       map(() => {
-        console.log('✅ Binance: API доступен');
         return true;
       }),
       catchError(error => {

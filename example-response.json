@@ -1,0 +1,86 @@
+{
+  "binance": {
+    "BTCUSDT": {
+      "price": 104750.5,
+      "fundingRate": 0.0001,
+      "nextFundingTime": 1749916800000,
+      "exchange": "binance"
+    },
+    "ETHUSDT": {
+      "price": 2517.45,
+      "fundingRate": 0.00015,
+      "nextFundingTime": 1749916800000,
+      "exchange": "binance"
+    }
+  },
+  "bybit": {
+    "BTCUSDT": {
+      "price": 104748.2,
+      "fundingRate": 0.000075,
+      "nextFundingTime": 1749916800000,
+      "exchange": "bybit"
+    },
+    "ETHUSDT": {
+      "price": 2516.89,
+      "fundingRate": 0.00012,
+      "nextFundingTime": 1749916800000,
+      "exchange": "bybit"
+    }
+  },
+  "bitget": {
+    "BTCUSDT": {
+      "price": 104752.1,
+      "fundingRate": 0.000062,
+      "nextFundingTime": 1749916800000,
+      "exchange": "bitget"
+    },
+    "ETHUSDT": {
+      "price": 2517.17,
+      "fundingRate": 0.000089,
+      "nextFundingTime": 1749916800000,
+      "exchange": "bitget"
+    }
+  },
+  "bingx": {
+    "BTCUSDT": {
+      "price": 104749.8,
+      "fundingRate": 0.0,
+      "nextFundingTime": 1749916800000,
+      "exchange": "bingx"
+    },
+    "ETHUSDT": {
+      "price": 2516.95,
+      "fundingRate": 0.0,
+      "nextFundingTime": 1749916800000,
+      "exchange": "bingx"
+    }
+  },
+  "okx": {
+    "BTCUSDT": {
+      "price": 104751.3,
+      "fundingRate": 0.0,
+      "nextFundingTime": 1749916800000,
+      "exchange": "okx"
+    },
+    "ETHUSDT": {
+      "price": 2517.25,
+      "fundingRate": 0.0,
+      "nextFundingTime": 1749916800000,
+      "exchange": "okx"
+    }
+  },
+  "mexc": {
+    "BTCUSDT": {
+      "price": 104753.7,
+      "fundingRate": 0.00008,
+      "nextFundingTime": 1749916800000,
+      "exchange": "mexc"
+    },
+    "ETHUSDT": {
+      "price": 2517.56,
+      "fundingRate": 0.00011,
+      "nextFundingTime": 1749916800000,
+      "exchange": "mexc"
+    }
+  }
+}

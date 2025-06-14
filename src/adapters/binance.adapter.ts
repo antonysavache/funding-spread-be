@@ -59,7 +59,6 @@ export class BinanceAdapter {
       }
     });
 
-    console.log(`Binance адаптер: обработано ${Object.keys(result).length} тикеров`);
     return result;
   }
 

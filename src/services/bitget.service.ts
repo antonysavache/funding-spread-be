@@ -1,68 +1,94 @@
-import { Injectable } from '@nestjs/common';
-import { Observable, forkJoin, of, from } from 'rxjs';
-import { map, catchError, timeout } from 'rxjs/operators';
+import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
-import { BitGetAdapter, BitGetFundingResponse, BitGetTickerResponse } from '../adapters/bitget.adapter';
+import { BitGetAdapter } from '../adapters/bitget.adapter';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 
 @Injectable()
-export class BitgetService {
+export class BitGetService {
+  private readonly logger = new Logger(BitGetService.name);
   private readonly baseUrl = 'https://api.bitget.com';
-  private readonly fundingEndpoint = '/api/mix/v1/market/current-fundRate';
-  private readonly tickerEndpoint = '/api/mix/v1/market/ticker';
 
-  getFundingData(): Observable<{ [ticker: string]: NormalizedTicker }> {
-    console.log('🔄 BitGet: Начинаем загрузку funding данных...');
+  /**
+   * Получает нормализованные данные с BitGet используя API v2
+   */
+  async getFundingData(): Promise<{ [ticker: string]: NormalizedTicker }> {
+    this.logger.log('🔄 BitGet: Начинаем загрузку funding данных...');
 
-    const funding$ = this.getFundingRates();
-    const ticker$ = this.getTickerData();
+    try {
+      // BitGet API v2 endpoints
+      const tickersUrl = `${this.baseUrl}/api/v2/mix/market/tickers?productType=usdt-futures`;
 
-    return forkJoin({ funding: funding$, ticker: ticker$ }).pipe(
-      map(({ funding, ticker }) => {
-        console.log(`✅ BitGet: Получено ${funding.length} funding rates и ${ticker.length} tickers`);
+      this.logger.log(`🌐 BitGet: Делаем запрос к ${tickersUrl}`);
 
-        const filteredFunding = BitGetAdapter.filterUsdtPerpetuals(funding);
-        const filteredTickers = BitGetAdapter.filterUsdtPerpetuals(ticker);
-        
-        const normalized = BitGetAdapter.normalize(filteredFunding, filteredTickers);
-        const tickers = Object.keys(normalized);
-        
-        console.log(`🎯 BitGet: Успешно обработано ${tickers.length} тикеров`);
-        return normalized;
-      }),
-      catchError(error => {
-        console.error('❌ BitGet: Ошибка при получении данных:', error);
-        return of({});
-      })
-    );
+      // Пробуем получить данные из tickers endpoint (содержит все нужные данные)
+      const response = await axios.get(tickersUrl, { 
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      
+      this.logger.log(`📥 BitGet: Получен статус ${response.status}`);
+      this.logger.log(`📄 BitGet: Структура ответа:`, {
+        keys: Object.keys(response.data),
+        code: response.data.code,
+        msg: response.data.msg,
+        dataLength: response.data.data?.length || 0
+      });
+      
+      if (response.data.code !== '00000') {
+        this.logger.error(`❌ BitGet: API ошибка - код: ${response.data.code}, сообщение: ${response.data.msg}`);
+        throw new Error(`BitGet API error: ${response.data.msg}`);
+      }
+
+      this.logger.log(`✅ BitGet: Получено ${response.data.data?.length || 0} инструментов`);
+      
+      // Логируем первые несколько элементов для анализа
+      if (response.data.data && response.data.data.length > 0) {
+        this.logger.log('🔍 BitGet: Первые 3 инструмента:', response.data.data.slice(0, 3));
+      }
+
+      // Преобразуем response в ожидаемый формат
+      const tickersResponse = {
+        code: response.data.code,
+        msg: response.data.msg,
+        requestTime: response.data.requestTime,
+        data: response.data.data || []
+      };
+
+      const normalizedData = BitGetAdapter.normalize(tickersResponse);
+      const tickers = Object.keys(normalizedData);
+      
+      this.logger.log(`🎯 BitGet: Успешно обработано ${tickers.length} тикеров:`, tickers.slice(0, 10));
+      
+      // Логируем несколько примеров для отладки
+      if (tickers.length > 0) {
+        tickers.slice(0, 3).forEach(ticker => {
+          const data = normalizedData[ticker];
+          this.logger.log(`📊 BitGet ${ticker}:`, {
+            price: data.price,
+            fundingRate: (data.fundingRate * 100).toFixed(4) + '%',
+            nextFunding: new Date(data.nextFundingTime).toLocaleTimeString()
+          });
+        });
+      } else {
+        this.logger.warn('⚠️ BitGet: Не удалось обработать ни одного тикера');
+      }
+
+      return normalizedData;
+    } catch (error) {
+      this.logger.error('❌ BitGet: Детальная ошибка:', {
+        message: error.message,
+        code: error.code,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url
+      });
+      
+      // В случае ошибки возвращаем пустой объект
+      this.logger.error('❌ BitGet: Не удалось получить данные');
+      return {};
+    }
+    }
   }
-
-  private getFundingRates(): Observable<any[]> {
-    const url = `${this.baseUrl}${this.fundingEndpoint}?productType=umcbl`;
-
-    return from(axios.get<BitGetFundingResponse>(url)).pipe(
-      timeout(10000),
-      map(response => BitGetAdapter.isValidResponse(response.data) ? response.data.data : []),
-      catchError(() => of([]))
-    );
-  }
-
-  private getTickerData(): Observable<any[]> {
-    const url = `${this.baseUrl}${this.tickerEndpoint}?productType=umcbl`;
-
-    return from(axios.get<BitGetTickerResponse>(url)).pipe(
-      timeout(10000),
-      map(response => BitGetAdapter.isValidResponse(response.data) ? response.data.data : []),
-      catchError(() => of([]))
-    );
-  }
-
-  checkApiHealth(): Observable<boolean> {
-    const url = `${this.baseUrl}${this.tickerEndpoint}?productType=umcbl`;
-    return from(axios.get(url)).pipe(
-      timeout(5000),
-      map(() => true),
-      catchError(() => of(false))
-    );
-  }
-}

@@ -1,21 +1,5 @@
 import { NormalizedTicker } from './normalized-ticker.interface';
 
-export interface BybitFundingResponse {
-  retCode: number;
-  retMsg: string;
-  result: {
-    category: string;
-    list: BybitFundingData[];
-  };
-  time: number;
-}
-
-export interface BybitFundingData {
-  symbol: string;
-  fundingRate: string;
-  fundingRateTimestamp: string;
-}
-
 export interface BybitTickerResponse {
   retCode: number;
   retMsg: string;
@@ -32,6 +16,10 @@ export interface BybitTickerData {
   indexPrice: string;
   lastPrice: string;
   nextFundingTime: string;
+  fundingRate: string;
+  price24hPcnt: string;
+  volume24h: string;
+  turnover24h: string;
 }
 
 export class BybitAdapter {
@@ -39,35 +27,27 @@ export class BybitAdapter {
   /**
    * Нормализует данные Bybit к общему формату
    */
-  static normalize(
-    fundingData: BybitFundingData[],
-    tickerData: BybitTickerData[]
-  ): { [ticker: string]: NormalizedTicker } {
+  static normalize(tickerData: BybitTickerData[]): { [ticker: string]: NormalizedTicker } {
     const normalized: { [ticker: string]: NormalizedTicker } = {};
 
-    // Создаем Map для быстрого поиска ticker данных
-    const tickerMap = new Map(
-      tickerData.map(item => [item.symbol, item])
-    );
-
-    fundingData.forEach(fundingItem => {
-      const tickerItem = tickerMap.get(fundingItem.symbol);
-      
-      if (tickerItem && this.isValidUsdtPerpetual(fundingItem.symbol)) {
-        const ticker = this.extractBaseCurrency(fundingItem.symbol);
+    tickerData.forEach(tickerItem => {
+      if (this.isValidUsdtPerpetual(tickerItem.symbol) && 
+          tickerItem.fundingRate && 
+          tickerItem.nextFundingTime) {
+        
+        const ticker = this.extractBaseCurrency(tickerItem.symbol);
         
         if (ticker) {
           normalized[ticker] = {
             ticker: ticker,
             price: parseFloat(tickerItem.markPrice),
-            fundingRate: parseFloat(fundingItem.fundingRate),
+            fundingRate: parseFloat(tickerItem.fundingRate),
             nextFundingTime: parseInt(tickerItem.nextFundingTime, 10)
           };
         }
       }
     });
 
-    console.log(`Bybit адаптер: обработано ${Object.keys(normalized).length} тикеров`);
     return normalized;
   }
 
@@ -91,7 +71,7 @@ export class BybitAdapter {
   /**
    * Проверяет валидность ответа Bybit API
    */
-  static isValidResponse(response: BybitFundingResponse | BybitTickerResponse): boolean {
+  static isValidResponse(response: BybitTickerResponse): boolean {
     return response && response.retCode === 0 && response.result && Array.isArray(response.result.list);
   }
 

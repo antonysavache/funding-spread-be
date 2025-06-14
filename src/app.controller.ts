@@ -14,14 +14,15 @@ export class AppController {
       endpoints: {
         'GET /': 'Информация об API',
         'GET /health': 'Проверка здоровья сервиса',
-        'GET /api/funding/all': 'Данные со всех бирж',
+        'GET /api/funding/getData': 'Данные со всех бирж в структурированном формате',
+        'GET /api/funding/all': 'Данные со всех бирж (старый формат)',
         'GET /api/funding/summaries': 'Сводная таблица по тикерам',
         'GET /api/funding/arbitrage?minDelta=0.001': 'Арбитражные возможности',
         'GET /api/funding/different-payout-times?fundingAbsFilter=0.2': 'Разное время выплат',
         'GET /api/funding/health': 'Здоровье API всех бирж',
         'GET /api/funding/stats': 'Статистика по биржам'
       },
-      exchanges: ['Binance', 'Bybit', 'BitGet', 'MEXC', 'OKX'],
+      exchanges: ['Binance', 'Bybit', 'BitGet', 'MEXC', 'BingX'],
       timestamp: new Date().toISOString()
     };
   }
