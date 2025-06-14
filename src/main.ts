@@ -7,9 +7,10 @@ async function bootstrap() {
   
   // Включаем CORS для фронтенда
   app.enableCors({
-    origin: ['http://localhost:4200', 'http://localhost:4201', 'http://localhost:3000'],
+    origin: true, // Разрешаем все домены для Vercel
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   });
 
   // Включаем валидацию
@@ -18,21 +19,16 @@ async function bootstrap() {
     whitelist: true,
   }));
 
-  // Добавляем глобальный префикс для API
-  app.setGlobalPrefix('');
-
-  const port = process.env.PORT ?? 3001;
+  const port = process.env.PORT || 3000;
   
   await app.listen(port);
   
   console.log(`🚀 Funding Rates API запущен на порту ${port}`);
-  console.log(`📊 Доступные эндпоинты:`);
-  console.log(`   GET http://localhost:${port}/ - Информация об API`);
-  console.log(`   GET http://localhost:${port}/api/funding/all - Все данные`);
-  console.log(`   GET http://localhost:${port}/api/funding/summaries - Сводная таблица`);
-  console.log(`   GET http://localhost:${port}/api/funding/arbitrage - Арбитражные возможности`);
-  console.log(`   GET http://localhost:${port}/api/funding/different-payout-times - Разное время выплат`);
-  console.log(`   GET http://localhost:${port}/api/funding/health - Здоровье API`);
-  console.log(`   GET http://localhost:${port}/api/funding/stats - Статистика`);
 }
-bootstrap();
+
+// Для Vercel экспортируем приложение
+if (process.env.VERCEL) {
+  module.exports = bootstrap;
+} else {
+  bootstrap();
+}
