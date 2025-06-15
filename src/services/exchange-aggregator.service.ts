@@ -6,6 +6,8 @@ import { BybitService } from './bybit.service';
 import { BitGetService } from './bitget.service';
 import { MexcService } from './mexc.service';
 import { BingXService } from './bingx.service';
+import { BitMEXService } from './bitmex.service';
+import { OKXService } from './okx.service';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 
 export interface AggregatedNormalizedData {
@@ -14,6 +16,8 @@ export interface AggregatedNormalizedData {
   bitget: { [ticker: string]: NormalizedTicker };
   mexc: { [ticker: string]: NormalizedTicker };
   bingx: { [ticker: string]: NormalizedTicker };
+  bitmex: { [ticker: string]: NormalizedTicker };
+  okx: { [ticker: string]: NormalizedTicker };
 }
 
 @Injectable()
@@ -26,6 +30,8 @@ export class ExchangeAggregatorService {
     private bitgetService: BitGetService,
     private mexcService: MexcService,
     private bingxService: BingXService,
+    private bitmexService: BitMEXService,
+    private okxService: OKXService,
   ) {}
 
   /**
@@ -57,6 +63,16 @@ export class ExchangeAggregatorService {
         catchError(error => {
           return of({});
         })
+      ),
+      bitmex: this.convertToObservable(this.bitmexService.getFundingData()).pipe(
+        catchError(error => {
+          return of({});
+        })
+      ),
+      okx: this.convertToObservable(this.okxService.getFundingData()).pipe(
+        catchError(error => {
+          return of({});
+        })
       )
     }).pipe(
       map(results => {
@@ -66,6 +82,8 @@ export class ExchangeAggregatorService {
         this.logger.log(`BitGet тикеров: ${Object.keys(results.bitget).length}`);
         this.logger.log(`MEXC тикеров: ${Object.keys(results.mexc).length}`);
         this.logger.log(`BingX тикеров: ${Object.keys(results.bingx).length}`);
+        this.logger.log(`BitMEX тикеров: ${Object.keys(results.bitmex).length}`);
+        this.logger.log(`OKX тикеров: ${Object.keys(results.okx).length}`);
         this.logger.log('=============================');
 
         return results;

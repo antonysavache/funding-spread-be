@@ -61,7 +61,7 @@ export class OKXAdapter {
 
   /**
    * Нормализует данные OKX v5 API в единый формат
-   * Использует tickers endpoint который содержит и цены и funding rates
+   * Использует tickers endpoint который МОЖЕТ содержать funding rates
    */
   static normalize(tickersResponse: OKXTickersResponse): { [ticker: string]: NormalizedTicker } {
 
@@ -73,35 +73,32 @@ export class OKXAdapter {
     const result: { [ticker: string]: NormalizedTicker } = {};
     console.log(`🔍 OKX адаптер: анализируем ${tickersResponse.data.length} элементов...`);
 
+    // Проверим первые 3 элемента на наличие funding rates
+    const sampleElements = tickersResponse.data.slice(0, 3);
+    sampleElements.forEach((ticker, index) => {
+      console.log(`🔍 OKX sample ${index + 1}:`, {
+        instId: ticker.instId,
+        last: ticker.last,
+        markPx: ticker.markPx,
+        fundingRate: ticker.fundingRate,
+        fundingTime: ticker.fundingTime,
+        nextFundingRate: ticker.nextFundingRate,
+        allFields: Object.keys(ticker)
+      });
+    });
+
     tickersResponse.data.forEach((ticker, index) => {
       const standardSymbol = this.convertOKXSymbol(ticker.instId);
-      
-      // Добавляем отладочные логи для первых элементов
-      if (index < 3) {
-        console.log(`🔍 OKX адаптер: элемент ${index + 1}:`, {
-          instId: ticker.instId,
-          standardSymbol: standardSymbol,
-          hasInstId: !!ticker.instId,
-          endsWithUSDT: standardSymbol?.endsWith('USDT'),
-          hasFundingRate: !!ticker.fundingRate,
-          hasMarkPx: !!ticker.markPx,
-          hasLast: !!ticker.last,
-          hasFundingTime: !!ticker.fundingTime,
-          fundingRateValue: ticker.fundingRate,
-          markPxValue: ticker.markPx,
-          lastValue: ticker.last
-        });
-      }
       
       // Фильтруем только USDT перпетуалы с валидными данными
       if (
         standardSymbol &&
         standardSymbol.endsWith('USDT') &&
         this.isValidTicker(standardSymbol) &&
-        ticker.fundingRate !== undefined &&
         (ticker.markPx || ticker.last)
       ) {
-        const fundingRate = parseFloat(ticker.fundingRate) || 0;
+        // Если есть funding rate из tickers - используем его, иначе 0
+        const fundingRate = ticker.fundingRate ? parseFloat(ticker.fundingRate) : 0;
         const price = parseFloat(ticker.markPx || ticker.last);
         const nextFundingTime = ticker.fundingTime ? 
           this.parseOKXTimestamp(ticker.fundingTime) : 
@@ -114,15 +111,14 @@ export class OKXAdapter {
           nextFundingTime: nextFundingTime
         };
 
-        if (index < 10) {
+        if (index < 5) {
           console.log(`✅ OKX адаптер: добавили ${standardSymbol}:`, {
             price,
-            fundingRate: (fundingRate * 100).toFixed(4) + '%',
+            fundingRate: (fundingRate * 100).toFixed(6) + '%',
+            hasFundingInSource: !!ticker.fundingRate,
             nextFunding: new Date(nextFundingTime).toLocaleTimeString()
           });
         }
-      } else if (index < 3) {
-        console.log(`❌ OKX адаптер: пропускаем ${ticker.instId} -> ${standardSymbol} - не прошел фильтрацию`);
       }
     });
 
