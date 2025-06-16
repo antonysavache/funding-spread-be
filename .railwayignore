@@ -1,0 +1,15 @@
+node_modules
+.git
+.env
+.env.local
+*.log
+.DS_Store
+.idea
+.vscode
+coverage
+.nyc_output
+test
+api
+vercel.json
+.vercelignore
+index.ts
