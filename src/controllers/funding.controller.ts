@@ -4,6 +4,7 @@ import { map } from 'rxjs/operators';
 import { ExchangeAggregatorService } from '../services/exchange-aggregator.service';
 import { AggregatedNormalizedData } from '../services/exchange-aggregator.service';
 import { GetDataResponse, Exchange, TickerData } from '../interfaces/get-data-response.interface';
+import { LiveSpreadsResponse, ExchangeFundingData } from '../interfaces/live-spreads.interface';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 import { OKXService } from '../services/okx.service';
 
@@ -129,6 +130,87 @@ export class FundingController {
 
           return result;
         })
+    );
+  }
+
+  /**
+   * GET /api/funding/spreadsTable
+   * Возвращает массив спредов фандинга между биржами для каждого тикера
+   */
+  @Get('spreadsTable')
+  getSpreadsTable(): Observable<LiveSpreadsResponse[]> {
+    return this.exchangeAggregatorService.getAllNormalizedData().pipe(
+      map(data => {
+        console.log('🔍 spreadsTable: начинаем формирование таблицы спредов...');
+
+        // Собираем все уникальные тикеры
+        const allTickers = new Set<string>();
+        const exchanges = ['binance', 'bybit', 'bitget', 'bingx', 'mexc', 'bitmex', 'okx'];
+
+        exchanges.forEach(exchange => {
+          const exchangeData = data[exchange as keyof typeof data];
+          if (exchangeData) {
+            Object.keys(exchangeData).forEach(ticker => allTickers.add(ticker));
+          }
+        });
+
+        console.log(`🔍 spreadsTable: найдено ${allTickers.size} уникальных тикеров`);
+
+        const spreadsTable: LiveSpreadsResponse[] = [];
+
+        allTickers.forEach(ticker => {
+          const tickerSpreads: Partial<LiveSpreadsResponse> = {
+            ticker: ticker
+          };
+
+          const availableFundingRates: number[] = [];
+
+          // Собираем данные по каждой бирже для текущего тикера
+          exchanges.forEach(exchange => {
+            const exchangeData = data[exchange as keyof typeof data];
+            
+            if (exchangeData && exchangeData[ticker]) {
+              const tickerData = exchangeData[ticker];
+              const fundingData: ExchangeFundingData = {
+                fundingRate: tickerData.fundingRate,
+                nextFundingTime: tickerData.nextFundingTime
+              };
+              
+              // Добавляем данные биржи в объект
+              (tickerSpreads as any)[exchange] = fundingData;
+              
+              // Собираем funding rates для расчета min/max/spread
+              if (tickerData.fundingRate !== null && tickerData.fundingRate !== undefined) {
+                availableFundingRates.push(tickerData.fundingRate);
+              }
+            }
+          });
+
+          // Рассчитываем min, max и spread только если есть данные
+          if (availableFundingRates.length > 0) {
+            const minFundingRate = Math.min(...availableFundingRates);
+            const maxFundingRate = Math.max(...availableFundingRates);
+            const spread = maxFundingRate - minFundingRate;
+
+            tickerSpreads.minFundingRate = minFundingRate;
+            tickerSpreads.maxFundingRate = maxFundingRate;
+            tickerSpreads.spread = spread;
+
+            spreadsTable.push(tickerSpreads as LiveSpreadsResponse);
+          }
+        });
+
+        // Сортируем по убыванию спреда для лучшей видимости арбитражных возможностей
+        const sortedSpreads = spreadsTable.sort((a, b) => (b.spread || 0) - (a.spread || 0));
+
+        console.log('🎯 spreadsTable: результат готов:', {
+          totalTickers: sortedSpreads.length,
+          topSpread: sortedSpreads[0]?.spread || 0,
+          topTicker: sortedSpreads[0]?.ticker || 'N/A'
+        });
+
+        return sortedSpreads;
+      })
     );
   }
 
