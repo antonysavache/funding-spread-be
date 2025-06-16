@@ -9,135 +9,165 @@ export class BingXService {
   private readonly baseUrl = 'https://open-api.bingx.com';
 
   /**
-   * Получает нормализованные данные с BingX используя два endpoint:
-   * - ticker для цен
-   * - premiumIndex для funding rates
+   * Получает нормализованные данные с BingX используя премиум индекс endpoint
+   * Использует endpoint без symbol параметра для получения всех данных сразу
    */
   async getFundingData(): Promise<{ [ticker: string]: NormalizedTicker }> {
-    this.logger.log('🔄 BingX: Начинаем загрузку funding данных...');
+    this.logger.log('🔄 BingX: Получаем данные через premiumIndex endpoint...');
 
     try {
-      // BingX API endpoints
-      const tickersUrl = `${this.baseUrl}/openApi/swap/v2/quote/ticker`;
+      // Используем premiumIndex endpoint без symbol параметра для получения всех данных
+      const url = `${this.baseUrl}/openApi/swap/v2/quote/premiumIndex`;
       
-      this.logger.log(`🌐 BingX: Делаем запрос к ${tickersUrl}`);
+      this.logger.log(`🌐 BingX: Запрашиваем данные с ${url}`);
       
-      // Получаем тикеры для цен
-      const tickersResponse = await axios.get(tickersUrl, { 
-        timeout: 10000,
+      const response = await axios.get(url, {
+        timeout: 15000,
         headers: {
+          'Content-Type': 'application/json',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
       });
-      
-      this.logger.log(`📥 BingX: Получен статус ${tickersResponse.status}`);
-      this.logger.log(`📄 BingX: Структура ответа:`, {
-        keys: Object.keys(tickersResponse.data),
-        code: tickersResponse.data.code,
-        msg: tickersResponse.data.msg,
-        dataLength: tickersResponse.data.data?.length || 0
-      });
-      
-      if (tickersResponse.data.code !== 0) {
-        this.logger.error(`❌ BingX: API ошибка - код: ${tickersResponse.data.code}, сообщение: ${tickersResponse.data.msg}`);
-        throw new Error(`BingX API error: ${tickersResponse.data.msg}`);
+
+      if (response.data.code !== 0) {
+        throw new Error(`BingX API error: ${response.data.msg}`);
       }
 
-      this.logger.log(`✅ BingX: Получено ${tickersResponse.data.data?.length || 0} инструментов`);
-      
-      // Логируем первые несколько элементов для анализа структуры
-      if (tickersResponse.data.data && tickersResponse.data.data.length > 0) {
-        this.logger.log('🔍 BingX: Первые 3 инструмента:', tickersResponse.data.data.slice(0, 3));
+      if (!response.data.data || !Array.isArray(response.data.data)) {
+        this.logger.warn('⚠️ BingX: Получен неожиданный формат данных:', response.data);
+        return {};
       }
 
-      // Получаем funding rates для популярных пар
-      const fundingData = await this.getFundingRates();
+      this.logger.log(`📊 BingX: Получено ${response.data.data.length} записей от API`);
 
-      // Объединяем данные
-      const normalizedData = BingXAdapter.normalizeWithFunding(tickersResponse.data, fundingData);
-      const tickers = Object.keys(normalizedData);
+      // Нормализуем данные
+      const normalized = this.normalizeAllData(response.data.data);
       
-      this.logger.log(`🔍 BingX: После фильтрации USDT перпетуалов: ${tickers.length} инструментов`);
-      this.logger.log(`🎯 BingX: Успешно обработано ${tickers.length} тикеров:`, tickers.slice(0, 10));
+      const tickers = Object.keys(normalized);
+      this.logger.log(`🎯 BingX: Успешно обработано ${tickers.length} тикеров`);
       
-      // Логируем несколько примеров для отладки
+      // Показать примеры с реальными funding rates
       if (tickers.length > 0) {
-        tickers.slice(0, 3).forEach(ticker => {
-          const data = normalizedData[ticker];
-          this.logger.log(`📊 BingX ${ticker}:`, {
-            price: data.price,
-            fundingRate: (data.fundingRate * 100).toFixed(4) + '%',
-            nextFunding: new Date(data.nextFundingTime).toLocaleTimeString()
-          });
+        const sampeTickers = tickers.slice(0, 5);
+        sampeTickers.forEach(ticker => {
+          const data = normalized[ticker];
+          this.logger.log(`📊 BingX ${ticker}: rate=${(data.fundingRate * 100).toFixed(4)}%, price=${data.price}`);
         });
       }
 
-      return normalizedData;
+      // Подсчитываем статистику по funding rates
+      const nonZeroFunding = tickers.filter(ticker => normalized[ticker].fundingRate !== 0);
+      this.logger.log(`📈 BingX: Инструментов с ненулевым funding rate: ${nonZeroFunding.length} из ${tickers.length}`);
+
+      return normalized;
+
     } catch (error) {
-      this.logger.error('❌ BingX: Детальная ошибка:', {
-        message: error.message,
-        code: error.code,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        url: error.config?.url
-      });
-      
-      // В случае ошибки возвращаем пустой объект
-      this.logger.error('❌ BingX: Не удалось получить данные');
+      this.logger.error('❌ BingX: Ошибка при получении данных:', error.message);
       return {};
     }
   }
 
   /**
-   * Получает funding rates для популярных валютных пар параллельно
+   * Нормализует все данные из премиум индекса
    */
-  private async getFundingRates(): Promise<{[symbol: string]: any}> {
-    const popularSymbols = [
-      'BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'AVAX-USDT', 'ADA-USDT',
-      'DOT-USDT', 'LINK-USDT', 'UNI-USDT', 'LTC-USDT', 'BCH-USDT',
-      'XRP-USDT', 'TRX-USDT', 'ETC-USDT', 'ATOM-USDT', 'AAVE-USDT',
-      'SUI-USDT', 'WIF-USDT', 'INJ-USDT', 'DOGE-USDT', 'NEAR-USDT',
-      'FIL-USDT', 'MATIC-USDT', 'SHIB-USDT', 'ICP-USDT', 'APT-USDT',
-      'OP-USDT', 'ARB-USDT', 'BNB-USDT', 'PEPE-USDT', 'FLOKI-USDT'
-    ];
+  private normalizeAllData(data: any[]): { [ticker: string]: NormalizedTicker } {
+    const result: { [ticker: string]: NormalizedTicker } = {};
 
-    this.logger.log(`📊 BingX: Получаем funding rates для ${popularSymbols.length} популярных символов`);
-
-    const fundingData: {[symbol: string]: any} = {};
-
-    // Создаем массив промисов для параллельных запросов
-    const fundingPromises = popularSymbols.map(async (symbol) => {
+    data.forEach((item, index) => {
       try {
-        const fundingUrl = `${this.baseUrl}/openApi/swap/v2/quote/premiumIndex?symbol=${symbol}`;
+        // Конвертируем символ в стандартный формат
+        const standardSymbol = this.convertBingXSymbol(item.symbol);
         
-        const response = await axios.get(fundingUrl, {
-          timeout: 5000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
-        });
-
-        if (response.data.code === 0 && response.data.data) {
-          return { symbol, data: response.data.data };
+        if (index < 3) {
+          this.logger.log(`🔍 BingX: обрабатываем ${item.symbol} -> ${standardSymbol}`);
+          this.logger.log(`🔍 BingX: данные:`, {
+            markPrice: item.markPrice,
+            lastFundingRate: item.lastFundingRate,
+            nextFundingTime: item.nextFundingTime
+          });
         }
-        return null;
+        
+        // Фильтруем только USDT пары с валидными данными
+        if (
+          standardSymbol &&
+          standardSymbol.endsWith('USDT') &&
+          this.isValidTicker(standardSymbol) &&
+          item.markPrice
+        ) {
+          
+          const fundingRate = item.lastFundingRate ? parseFloat(item.lastFundingRate) : 0;
+          const price = parseFloat(item.markPrice);
+          const nextFundingTime = item.nextFundingTime || this.calculateNextFundingTime();
+          
+          if (index < 3) {
+            this.logger.log(`✅ BingX: добавляем ${standardSymbol} с fundingRate=${fundingRate}`);
+          }
+          
+          if (price > 0) {
+            result[standardSymbol] = {
+              ticker: standardSymbol,
+              price: price,
+              fundingRate: fundingRate,
+              nextFundingTime: nextFundingTime
+            };
+          }
+        } else if (index < 3) {
+          this.logger.log(`❌ BingX: пропускаем ${item.symbol} - не подходит`);
+        }
       } catch (error) {
-        this.logger.warn(`⚠️ BingX: Не удалось получить funding rate для ${symbol}: ${error.message}`);
-        return null;
+        this.logger.warn(`⚠️ BingX: Ошибка обработки элемента ${index}:`, error.message);
       }
     });
 
-    // Выполняем все запросы параллельно
-    const results = await Promise.allSettled(fundingPromises);
+    return result;
+  }
+
+  /**
+   * Конвертирует BingX формат символа в стандартный
+   * BTC-USDT -> BTCUSDT
+   */
+  private convertBingXSymbol(bingxSymbol: string): string | null {
+    if (!bingxSymbol) return null;
+
+    const cleaned = bingxSymbol.replace('-', '');
     
-    results.forEach((result) => {
-      if (result.status === 'fulfilled' && result.value) {
-        fundingData[result.value.symbol] = result.value.data;
-      }
-    });
+    if (cleaned.endsWith('USDT') && cleaned.length > 4) {
+      return cleaned;
+    }
 
-    this.logger.log(`✅ BingX: Получено funding rates для ${Object.keys(fundingData).length} символов`);
-    return fundingData;
+    return null;
+  }
+
+  /**
+   * Проверяет что тикер в правильном формате XXXUSDT
+   */
+  private isValidTicker(ticker: string): boolean {
+    const regex = /^[A-Z0-9]+USDT$/;
+    return regex.test(ticker) && ticker.length > 4;
+  }
+
+  /**
+   * Вычисляет время следующего funding для BingX (каждые 8 часов: 00:00, 08:00, 16:00 UTC)
+   */
+  private calculateNextFundingTime(): number {
+    const now = new Date();
+    const currentHour = now.getUTCHours();
+    let nextFundingHour: number;
+
+    if (currentHour < 8) {
+      nextFundingHour = 8;
+    } else if (currentHour < 16) {
+      nextFundingHour = 16;
+    } else {
+      nextFundingHour = 24; // 00:00 следующего дня
+    }
+
+    const nextFundingTime = new Date(now);
+    nextFundingTime.setUTCHours(nextFundingHour % 24, 0, 0, 0);
+    if (nextFundingHour === 24) {
+      nextFundingTime.setUTCDate(nextFundingTime.getUTCDate() + 1);
+    }
+
+    return nextFundingTime.getTime();
   }
 }

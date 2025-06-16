@@ -8,6 +8,7 @@ import { MexcService } from './mexc.service';
 import { BingXService } from './bingx.service';
 import { BitMEXService } from './bitmex.service';
 import { OKXService } from './okx.service';
+import { KrakenService } from './kraken.service';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 
 export interface AggregatedNormalizedData {
@@ -18,6 +19,7 @@ export interface AggregatedNormalizedData {
   bingx: { [ticker: string]: NormalizedTicker };
   bitmex: { [ticker: string]: NormalizedTicker };
   okx: { [ticker: string]: NormalizedTicker };
+  kraken: { [ticker: string]: NormalizedTicker };
 }
 
 @Injectable()
@@ -32,6 +34,7 @@ export class ExchangeAggregatorService {
     private bingxService: BingXService,
     private bitmexService: BitMEXService,
     private okxService: OKXService,
+    private krakenService: KrakenService,
   ) {}
 
   /**
@@ -73,6 +76,11 @@ export class ExchangeAggregatorService {
         catchError(error => {
           return of({});
         })
+      ),
+      kraken: this.krakenService.getFundingData().pipe(
+        catchError(error => {
+          return of({});
+        })
       )
     }).pipe(
       map(results => {
@@ -84,6 +92,7 @@ export class ExchangeAggregatorService {
         this.logger.log(`BingX тикеров: ${Object.keys(results.bingx).length}`);
         this.logger.log(`BitMEX тикеров: ${Object.keys(results.bitmex).length}`);
         this.logger.log(`OKX тикеров: ${Object.keys(results.okx).length}`);
+        this.logger.log(`Kraken тикеров: ${Object.keys(results.kraken).length}`);
         this.logger.log('=============================');
 
         return results;

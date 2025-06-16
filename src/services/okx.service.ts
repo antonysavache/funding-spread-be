@@ -9,47 +9,59 @@ export class OKXService {
   private readonly baseUrl = 'https://www.okx.com';
 
   /**
-   * Получает нормализованные данные с OKX для всех USDT-SWAP контрактов
-   * Получает funding rates для каждого тикера отдельно
+   * Получает нормализованные данные с OKX используя один запрос к funding-rate endpoint с instId=ANY
    */
   async getFundingData(): Promise<{ [ticker: string]: NormalizedTicker }> {
-    this.logger.log('🔄 OKX: Начинаем загрузку funding данных для всех тикеров...');
+    this.logger.log('🔄 OKX: Получаем данные через funding-rate endpoint с instId=ANY...');
 
     try {
-      // Шаг 1: Получаем все SWAP инструменты
-      const allInstruments = await this.getAllSwapInstruments();
+      // Используем funding-rate endpoint с instId=ANY для получения всех данных сразу
+      const url = `${this.baseUrl}/api/v5/public/funding-rate?instId=ANY`;
       
-      if (allInstruments.length === 0) {
-        this.logger.warn('⚠️ OKX: Не найдено SWAP инструментов');
+      this.logger.log(`🌐 OKX: Запрашиваем данные с ${url}`);
+      
+      const response = await axios.get(url, {
+        timeout: 15000,
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      if (response.data.code !== '0') {
+        throw new Error(`OKX API error: ${response.data.msg}`);
+      }
+
+      if (!response.data.data || !Array.isArray(response.data.data)) {
+        this.logger.warn('⚠️ OKX: Получен неожиданный формат данных:', response.data);
         return {};
       }
 
-      this.logger.log(`📊 OKX: Найдено ${allInstruments.length} SWAP инструментов`);
+      this.logger.log(`📊 OKX: Получено ${response.data.data.length} записей от API`);
 
-      // Шаг 2: Получаем funding rates для всех инструментов
-      const fundingData = await this.getFundingRatesForAll(allInstruments);
-
-      // Шаг 3: Получаем mark prices для всех инструментов
-      const markPrices = await this.getMarkPrices();
-
-      // Шаг 4: Нормализуем данные
-      const normalizedData = OKXAdapter.normalizeMarkPriceWithFunding(
-        { code: '0', msg: '', data: markPrices },
-        fundingData
-      );
-
-      const tickers = Object.keys(normalizedData);
-      this.logger.log(`🎯 OKX: Успешно обработано ${tickers.length} тикеров с реальными funding rates`);
+      // Нормализуем данные
+      const fundingData = this.normalizeAllFundingData(response.data.data);
+      
+      // Обогащаем ценами
+      const normalized = await this.enrichWithPrices(fundingData);
+      
+      const tickers = Object.keys(normalized);
+      this.logger.log(`🎯 OKX: Успешно обработано ${tickers.length} тикеров`);
       
       // Показать примеры с реальными funding rates
       if (tickers.length > 0) {
-        tickers.slice(0, 5).forEach(ticker => {
-          const data = normalizedData[ticker];
+        const sampleTickers = tickers.slice(0, 5);
+        sampleTickers.forEach(ticker => {
+          const data = normalized[ticker];
           this.logger.log(`📊 OKX ${ticker}: rate=${(data.fundingRate * 100).toFixed(4)}%, price=${data.price}`);
         });
       }
 
-      return normalizedData;
+      // Подсчитываем статистику по funding rates
+      const nonZeroFunding = tickers.filter(ticker => normalized[ticker].fundingRate !== 0);
+      this.logger.log(`📈 OKX: Инструментов с ненулевым funding rate: ${nonZeroFunding.length} из ${tickers.length}`);
+
+      return normalized;
 
     } catch (error) {
       this.logger.error('❌ OKX: Ошибка при получении данных:', error.message);
@@ -58,147 +70,77 @@ export class OKXService {
   }
 
   /**
-   * Получает все SWAP инструменты
+   * Нормализует все данные из funding-rate endpoint
    */
-  private async getAllSwapInstruments(): Promise<string[]> {
-    try {
-      const url = `${this.baseUrl}/api/v5/public/instruments?instType=SWAP`;
-      
-      this.logger.log('🌐 OKX: Получаем список всех SWAP инструментов...');
-      
-      const response = await axios.get(url, { 
-        timeout: 15000,
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      
-      if (response.data.code !== '0') {
-        throw new Error(`OKX Instruments API error: ${response.data.msg}`);
-      }
+  private normalizeAllFundingData(data: any[]): { [ticker: string]: NormalizedTicker } {
+    const result: { [ticker: string]: NormalizedTicker } = {};
 
-      // Фильтруем только USDT SWAP инструменты
-      const usdtInstruments = response.data.data
-        .filter((inst: any) => inst.instId && inst.instId.includes('USDT-SWAP'))
-        .map((inst: any) => inst.instId);
-
-      this.logger.log(`✅ OKX: Найдено ${usdtInstruments.length} USDT-SWAP инструментов`);
-      
-      return usdtInstruments;
-
-    } catch (error) {
-      this.logger.error('❌ OKX: Ошибка при получении инструментов:', error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Получает funding rates для всех инструментов по одному
-   */
-  private async getFundingRatesForAll(allInstIds: string[]): Promise<{[instId: string]: any}> {
-    const fundingData: {[instId: string]: any} = {};
-    const total = allInstIds.length;
-    const delay = 50; // 50ms между запросами (20 req/sec - в пределах лимита 20 req/2sec)
-
-    this.logger.log(`📦 OKX: Получаем funding rates для ${total} инструментов по одному...`);
-
-    for (let i = 0; i < allInstIds.length; i++) {
-      const instId = allInstIds[i];
-      const progress = Math.round((i / total) * 100);
-      
+    data.forEach((item, index) => {
       try {
-        const url = `${this.baseUrl}/api/v5/public/funding-rate?instId=${instId}`;
-
-        if (i % 20 === 0) {
-          this.logger.log(`🔄 OKX: ${progress}% - Обрабатываем ${instId} (${i + 1}/${total})`);
-        }
-
-        const response = await axios.get(url, {
-          timeout: 8000,
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
-        });
-
-        if (response.data.code === '0' && response.data.data && response.data.data.length > 0) {
-          fundingData[instId] = response.data.data[0];
-        } else {
-          this.logger.warn(`⚠️ OKX: ${instId} - код ${response.data.code}: ${response.data.msg}`);
-        }
-
-        // Задержка между запросами
-        if (i < total - 1) {
-          await this.delay(delay);
-        }
-
-      } catch (error) {
-        this.logger.warn(`⚠️ OKX: Ошибка для ${instId}: ${error.message}`);
+        // Конвертируем символ в стандартный формат
+        const standardSymbol = this.convertOKXSymbol(item.instId);
         
-        // Увеличиваем задержку при ошибке rate limit
-        if (error.response?.status === 429) {
-          this.logger.warn(`🚫 OKX: Rate limit для ${instId}, увеличиваем задержку...`);
-          await this.delay(500);
+        if (index < 3) {
+          this.logger.log(`🔍 OKX: обрабатываем ${item.instId} -> ${standardSymbol}`);
+          this.logger.log(`🔍 OKX: данные:`, {
+            fundingRate: item.fundingRate,
+            nextFundingTime: item.nextFundingTime,
+            instType: item.instType
+          });
         }
+        
+        // Фильтруем только USDT SWAP инструменты с валидными данными
+        if (
+          standardSymbol &&
+          standardSymbol.endsWith('USDT') &&
+          this.isValidTicker(standardSymbol) &&
+          item.instType === 'SWAP' &&
+          item.fundingRate !== undefined
+        ) {
+          
+          const fundingRate = parseFloat(item.fundingRate) || 0;
+          const nextFundingTime = item.nextFundingTime ? 
+            parseInt(item.nextFundingTime) : 
+            this.calculateNextFundingTime();
+          
+          // Для получения цены нужно сделать дополнительный запрос
+          // Пока используем placeholder, позже добавим mark price
+          const price = 0; // Будет заполнено позже через mark price endpoint
+          
+          if (index < 3) {
+            this.logger.log(`✅ OKX: добавляем ${standardSymbol} с fundingRate=${fundingRate}`);
+          }
+          
+          result[standardSymbol] = {
+            ticker: standardSymbol,
+            price: price, // Временно 0, будет обновлено
+            fundingRate: fundingRate,
+            nextFundingTime: nextFundingTime
+          };
+        } else if (index < 3) {
+          this.logger.log(`❌ OKX: пропускаем ${item.instId} - не подходит (type: ${item.instType})`);
+        }
+      } catch (error) {
+        this.logger.warn(`⚠️ OKX: Ошибка обработки элемента ${index}:`, error.message);
       }
-    }
+    });
 
-    const totalReceived = Object.keys(fundingData).length;
-    this.logger.log(`📊 OKX: Итого получено funding rates для ${totalReceived} из ${total} инструментов`);
+    // Логируем результат
+    this.logger.log(`📊 OKX: Найдено ${Object.keys(result).length} SWAP инструментов для обогащения ценами`);
     
-    return fundingData;
+    return result;
   }
 
   /**
-   * Получает mark prices для всех SWAP инструментов
+   * Обогащает данные ценами из mark-price endpoint
    */
-  private async getMarkPrices(): Promise<any[]> {
+  private async enrichWithPrices(fundingData: { [ticker: string]: NormalizedTicker }): Promise<{ [ticker: string]: NormalizedTicker }> {
     try {
       const url = `${this.baseUrl}/api/v5/public/mark-price?instType=SWAP`;
       
       this.logger.log('🌐 OKX: Получаем mark prices для всех SWAP...');
       
-      const response = await axios.get(url, { 
-        timeout: 15000,
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      
-      if (response.data.code !== '0') {
-        throw new Error(`OKX Mark Price API error: ${response.data.msg}`);
-      }
-
-      const markPrices = response.data.data || [];
-      this.logger.log(`✅ OKX: Получено ${markPrices.length} mark prices`);
-      
-      return markPrices;
-
-    } catch (error) {
-      this.logger.error('❌ OKX: Ошибка при получении mark prices:', error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Простая задержка
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /**
-   * Альтернативный метод - получение данных через tickers endpoint (быстрый, но funding rates = 0)
-   */
-  async getFundingDataAlternative(): Promise<{ [ticker: string]: NormalizedTicker }> {
-    this.logger.log('🔄 OKX Alternative: Получаем данные через tickers endpoint...');
-
-    try {
-      const url = `${this.baseUrl}/api/v5/market/tickers?instType=SWAP`;
-      
-      const response = await axios.get(url, { 
+      const response = await axios.get(url, {
         timeout: 15000,
         headers: {
           'Content-Type': 'application/json',
@@ -207,28 +149,75 @@ export class OKXService {
       });
 
       if (response.data.code !== '0') {
-        throw new Error(`OKX Tickers API error: ${response.data.msg}`);
+        this.logger.warn(`⚠️ OKX: Ошибка получения цен: ${response.data.msg}`);
+        return fundingData;
       }
 
-      this.logger.log(`📊 OKX Alternative: Получено ${response.data.data?.length || 0} тикеров`);
+      if (!response.data.data || !Array.isArray(response.data.data)) {
+        this.logger.warn('⚠️ OKX: Неожиданный формат ответа mark-price');
+        return fundingData;
+      }
 
-      const normalizedData = OKXAdapter.normalize(response.data);
-      const tickers = Object.keys(normalizedData);
-      
-      this.logger.log(`🎯 OKX Alternative: Обработано ${tickers.length} тикеров`);
-      
-      return normalizedData;
+      this.logger.log(`📊 OKX: Получено ${response.data.data.length} mark prices`);
+
+      // Обновляем цены в funding data
+      let pricesUpdated = 0;
+      response.data.data.forEach(markPrice => {
+        const standardSymbol = this.convertOKXSymbol(markPrice.instId);
+        
+        if (standardSymbol && fundingData[standardSymbol] && markPrice.markPx) {
+          fundingData[standardSymbol].price = parseFloat(markPrice.markPx);
+          pricesUpdated++;
+        }
+      });
+
+      this.logger.log(`✅ OKX: Обновлено цен: ${pricesUpdated} из ${Object.keys(fundingData).length}`);
+
+      // Удаляем тикеры без цены
+      const result: { [ticker: string]: NormalizedTicker } = {};
+      Object.entries(fundingData).forEach(([ticker, data]) => {
+        if (data.price > 0) {
+          result[ticker] = data;
+        }
+      });
+
+      return result;
 
     } catch (error) {
-      this.logger.error('❌ OKX Alternative: Ошибка:', error.message);
-      return {};
+      this.logger.error('❌ OKX: Ошибка при получении цен:', error.message);
+      return fundingData;
     }
+  }
+
+  /**
+   * Конвертирует OKX формат символа в стандартный
+   * BTC-USDT-SWAP -> BTCUSDT
+   */
+  private convertOKXSymbol(okxSymbol: string): string | null {
+    if (!okxSymbol) return null;
+
+    // Удаляем суффикс -SWAP и заменяем - на пустую строку
+    const cleaned = okxSymbol.replace('-SWAP', '').replace('-', '');
+    
+    if (cleaned.endsWith('USDT') && cleaned.length > 4) {
+      return cleaned;
+    }
+
+    return null;
+  }
+
+  /**
+   * Проверяет что тикер в правильном формате XXXUSDT
+   */
+  private isValidTicker(ticker: string): boolean {
+    const regex = /^[A-Z0-9]+USDT$/;
+    return regex.test(ticker) && ticker.length > 4;
   }
 
   /**
    * Вычисляет время следующего funding для OKX (каждые 8 часов: 00:00, 08:00, 16:00 UTC)
    */
-  private static calculateNextFundingTime(): number {
+  private calculateNextFundingTime(): number {
     const now = new Date();
     const currentHour = now.getUTCHours();
     let nextFundingHour: number;

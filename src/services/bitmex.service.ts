@@ -35,7 +35,14 @@ export class BitMEXService {
       
       // Логируем первые несколько элементов для анализа структуры
       if (instrumentsResponse.data && instrumentsResponse.data.length > 0) {
-        this.logger.log('🔍 BitMEX: Первые 3 инструмента:', instrumentsResponse.data.slice(0, 3));
+        this.logger.log('🔍 BitMEX: Первые 3 инструмента:', instrumentsResponse.data.slice(0, 3).map(inst => ({
+          symbol: inst.symbol,
+          typ: inst.typ,
+          state: inst.state,
+          settlCurrency: inst.settlCurrency,
+          lastPrice: inst.lastPrice,
+          markPrice: inst.markPrice
+        })));
       }
 
       // Получаем funding rates для инструментов
@@ -78,52 +85,51 @@ export class BitMEXService {
   }
 
   /**
-   * Получает текущие funding rates для активных символов
+   * Получает текущие funding rates для ВСЕХ активных perpetual инструментов
    */
   private async getFundingRates(): Promise<{[symbol: string]: any}> {
     try {
-      // BitMEX symbols для которых получаем funding rates
-      const bitmexSymbols = [
-        'XBTUSD', 'ETHUSD', 'SOLUSD', 'ADAUSD', 'XRPUSD', 
-        'LTCUSD', 'LINKUSD', 'DOGEUSD', 'AVAXUSD', 'DOTUSD'
-      ];
-
-      this.logger.log(`📊 BitMEX: Получаем funding rates для ${bitmexSymbols.length} символов`);
+      // Получаем funding rates для всех инструментов сразу
+      this.logger.log(`📊 BitMEX: Получаем funding rates для всех активных инструментов`);
+      
+      const fundingUrl = `${this.baseUrl}/funding?reverse=true&count=500`;
+      
+      const response = await axios.get(fundingUrl, {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
 
       const fundingData: {[symbol: string]: any} = {};
-
-      // Получаем funding rates для каждого символа параллельно
-      const fundingPromises = bitmexSymbols.map(async (symbol) => {
-        try {
-          const fundingUrl = `${this.baseUrl}/funding?symbol=${symbol}&count=1&reverse=true`;
-          
-          const response = await axios.get(fundingUrl, {
-            timeout: 5000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-          });
-
-          if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-            return { symbol, data: response.data[0] };
-          }
-          return null;
-        } catch (error) {
-          this.logger.warn(`⚠️ BitMEX: Не удалось получить funding rate для ${symbol}: ${error.message}`);
-          return null;
-        }
-      });
-
-      // Выполняем все запросы параллельно
-      const results = await Promise.allSettled(fundingPromises);
       
-      results.forEach((result) => {
-        if (result.status === 'fulfilled' && result.value) {
-          fundingData[result.value.symbol] = result.value.data;
-        }
-      });
+      if (response.data && Array.isArray(response.data)) {
+        // Группируем по символам и берем последний funding rate для каждого
+        const fundingBySymbol = new Map();
+        
+        response.data.forEach(fundingEntry => {
+          const symbol = fundingEntry.symbol;
+          if (!fundingBySymbol.has(symbol) || 
+              new Date(fundingEntry.timestamp) > new Date(fundingBySymbol.get(symbol).timestamp)) {
+            fundingBySymbol.set(symbol, fundingEntry);
+          }
+        });
+        
+        // Конвертируем Map в обычный объект
+        fundingBySymbol.forEach((value, key) => {
+          fundingData[key] = value;
+        });
+        
+        this.logger.log(`✅ BitMEX: Получено funding rates для ${Object.keys(fundingData).length} символов`);
+        
+        // Логируем первые несколько для отладки
+        const symbols = Object.keys(fundingData).slice(0, 5);
+        symbols.forEach(symbol => {
+          const funding = fundingData[symbol];
+          this.logger.log(`📈 BitMEX funding ${symbol}: rate=${(funding.fundingRate * 100).toFixed(4)}%, time=${funding.timestamp}`);
+        });
+      }
 
-      this.logger.log(`✅ BitMEX: Получено funding rates для ${Object.keys(fundingData).length} символов`);
       return fundingData;
     } catch (error) {
       this.logger.error(`❌ BitMEX: Ошибка при получении funding rates: ${error.message}`);

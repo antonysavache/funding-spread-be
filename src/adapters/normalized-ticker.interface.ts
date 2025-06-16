@@ -17,6 +17,7 @@ export interface AggregatedData {
   bitget: { [ticker: string]: NormalizedTicker };
   mexc: { [ticker: string]: NormalizedTicker };
   okx: { [ticker: string]: NormalizedTicker };
+  kraken: { [ticker: string]: NormalizedTicker };
 }
 
 /**

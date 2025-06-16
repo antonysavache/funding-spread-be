@@ -35,30 +35,19 @@ export class BybitAdapter {
           tickerItem.fundingRate && 
           tickerItem.nextFundingTime) {
         
-        const ticker = this.extractBaseCurrency(tickerItem.symbol);
+        // Используем полный символ с USDT суффиксом для совместимости с другими биржами
+        const ticker = tickerItem.symbol;
         
-        if (ticker) {
-          normalized[ticker] = {
-            ticker: ticker,
-            price: parseFloat(tickerItem.markPrice),
-            fundingRate: parseFloat(tickerItem.fundingRate),
-            nextFundingTime: parseInt(tickerItem.nextFundingTime, 10)
-          };
-        }
+        normalized[ticker] = {
+          ticker: ticker,
+          price: parseFloat(tickerItem.markPrice),
+          fundingRate: parseFloat(tickerItem.fundingRate),
+          nextFundingTime: parseInt(tickerItem.nextFundingTime, 10)
+        };
       }
     });
 
     return normalized;
-  }
-
-  /**
-   * Извлекает базовую валюту из символа Bybit
-   */
-  private static extractBaseCurrency(symbol: string): string | null {
-    if (symbol.endsWith('USDT')) {
-      return symbol.replace('USDT', '');
-    }
-    return null;
   }
 
   /**

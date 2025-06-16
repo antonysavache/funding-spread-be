@@ -33,7 +33,8 @@ export class FundingController {
           bingx: {},
           mexc: {},
           bitmex: {},
-          okx: {}
+          okx: {},
+          // kraken: {}
         };
 
         // Трансформируем данные в нужный формат
@@ -62,6 +63,10 @@ export class FundingController {
             console.log('✅ getData: Добавляем OKX данные:', Object.keys(exchange).length, 'тикеров');
             result.okx = exchange;
           }
+          else if (exchangeName === 'kraken') {
+            console.log('✅ getData: Добавляем Kraken данные:', Object.keys(exchange).length, 'тикеров');
+            // result.kraken = exchange;
+          }
         });
 
         console.log('🎯 getData: финальный результат:', {
@@ -71,7 +76,8 @@ export class FundingController {
           bingx: Object.keys(result.bingx).length,
           mexc: Object.keys(result.mexc).length,
           bitmex: Object.keys(result.bitmex).length,
-          okx: Object.keys(result.okx).length
+          okx: Object.keys(result.okx).length,
+          // kraken: Object.keys(result.kraken).length
         });
 
         return result;
@@ -137,6 +143,7 @@ export class FundingController {
         bingx: Object.keys(data.bingx).length > 0,
         bitmex: Object.keys(data.bitmex).length > 0,
         okx: Object.keys(data.okx).length > 0,
+        kraken: Object.keys(data.kraken).length > 0,
       }))
     );
   }
@@ -185,6 +192,11 @@ export class FundingController {
             name: 'OKX',
             tickersCount: Object.keys(data.okx).length,
             status: 'active'
+          },
+          kraken: {
+            name: 'Kraken',
+            tickersCount: Object.keys(data.kraken).length,
+            status: 'active'
           }
         },
         totalUniqueTokens: new Set([
@@ -194,7 +206,8 @@ export class FundingController {
           ...Object.keys(data.mexc),
           ...Object.keys(data.bingx),
           ...Object.keys(data.bitmex),
-          ...Object.keys(data.okx)
+          ...Object.keys(data.okx),
+          ...Object.keys(data.kraken)
         ]).size
       }))
     );
