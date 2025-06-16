@@ -14,8 +14,6 @@ export interface GetDataResponse {
   bybit: Exchange;
   bitget: Exchange;
   bingx: Exchange;
-  mexc: Exchange;
   bitmex: Exchange;
   okx: Exchange;
-  // kraken: Exchange;
 }

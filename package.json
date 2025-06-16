@@ -10,13 +10,13 @@
     "copy-dist": "mkdir public 2>nul & xcopy dist\\* public\\ /s /e /y 2>nul & exit 0",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/main"
+    "start:prod": "node dist/main",
+    "vercel-build": "npm run build"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
-    "@vercel/node": "^3.0.0",
     "express": "^4.18.2",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",

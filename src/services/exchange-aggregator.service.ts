@@ -4,22 +4,18 @@ import { map, catchError } from 'rxjs/operators';
 import { BinanceService } from './binance.service';
 import { BybitService } from './bybit.service';
 import { BitGetService } from './bitget.service';
-import { MexcService } from './mexc.service';
 import { BingXService } from './bingx.service';
 import { BitMEXService } from './bitmex.service';
 import { OKXService } from './okx.service';
-import { KrakenService } from './kraken.service';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 
 export interface AggregatedNormalizedData {
   binance: { [ticker: string]: NormalizedTicker };
   bybit: { [ticker: string]: NormalizedTicker };
   bitget: { [ticker: string]: NormalizedTicker };
-  mexc: { [ticker: string]: NormalizedTicker };
   bingx: { [ticker: string]: NormalizedTicker };
   bitmex: { [ticker: string]: NormalizedTicker };
   okx: { [ticker: string]: NormalizedTicker };
-  kraken: { [ticker: string]: NormalizedTicker };
 }
 
 @Injectable()
@@ -30,11 +26,9 @@ export class ExchangeAggregatorService {
     private binanceService: BinanceService,
     private bybitService: BybitService,
     private bitgetService: BitGetService,
-    private mexcService: MexcService,
     private bingxService: BingXService,
     private bitmexService: BitMEXService,
     private okxService: OKXService,
-    private krakenService: KrakenService,
   ) {}
 
   /**
@@ -57,11 +51,6 @@ export class ExchangeAggregatorService {
           return of({});
         })
       ),
-      mexc: this.convertToObservable(this.mexcService.getFundingData()).pipe(
-        catchError(error => {
-          return of({});
-        })
-      ),
       bingx: this.convertToObservable(this.bingxService.getFundingData()).pipe(
         catchError(error => {
           return of({});
@@ -76,11 +65,6 @@ export class ExchangeAggregatorService {
         catchError(error => {
           return of({});
         })
-      ),
-      kraken: this.krakenService.getFundingData().pipe(
-        catchError(error => {
-          return of({});
-        })
       )
     }).pipe(
       map(results => {
@@ -88,11 +72,9 @@ export class ExchangeAggregatorService {
         this.logger.log(`Binance тикеров: ${Object.keys(results.binance).length}`);
         this.logger.log(`Bybit тикеров: ${Object.keys(results.bybit).length}`);
         this.logger.log(`BitGet тикеров: ${Object.keys(results.bitget).length}`);
-        this.logger.log(`MEXC тикеров: ${Object.keys(results.mexc).length}`);
         this.logger.log(`BingX тикеров: ${Object.keys(results.bingx).length}`);
         this.logger.log(`BitMEX тикеров: ${Object.keys(results.bitmex).length}`);
         this.logger.log(`OKX тикеров: ${Object.keys(results.okx).length}`);
-        this.logger.log(`Kraken тикеров: ${Object.keys(results.kraken).length}`);
         this.logger.log('=============================');
 
         return results;

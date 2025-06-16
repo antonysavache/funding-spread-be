@@ -1,15 +1,11 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import axios from 'axios';
 import { ExchangeAggregatorService } from '../services/exchange-aggregator.service';
 import { AggregatedNormalizedData } from '../services/exchange-aggregator.service';
 import { GetDataResponse, Exchange, TickerData } from '../interfaces/get-data-response.interface';
 import { NormalizedTicker } from '../adapters/normalized-ticker.interface';
 import { OKXService } from '../services/okx.service';
-import { KrakenService } from '../services/kraken.service';
-import { BingXService } from '../services/bingx.service';
-import { BitMEXService } from '../services/bitmex.service';
 
 @Controller('api/funding')
 export class FundingController {
@@ -17,14 +13,11 @@ export class FundingController {
   constructor(
     private readonly exchangeAggregatorService: ExchangeAggregatorService,
     private readonly okxService: OKXService,
-    private readonly krakenService: KrakenService,
-    private readonly bingxService: BingXService,
-    private readonly bitmexService: BitMEXService,
   ) {}
 
   /**
    * GET /api/funding/getData
-   * Получает данные со всех бирж в новом формате включая OKX и Kraken
+   * Получает данные со всех бирж в новом формате включая OKX
    */
   @Get('getData')
   getData(): Observable<GetDataResponse> {
@@ -32,17 +25,14 @@ export class FundingController {
       map(data => {
         console.log('🔍 getData: полученные данные от агрегатора:', Object.keys(data));
         console.log('🔍 getData: OKX тикеров:', Object.keys(data.okx || {}).length);
-        console.log('🔍 getData: Kraken тикеров:', Object.keys(data.kraken || {}).length);
         
         const result: GetDataResponse = {
           binance: {},
           bybit: {},
           bitget: {},
           bingx: {},
-          mexc: {},
           bitmex: {},
-          okx: {},
-          // kraken: {}
+          okx: {}
         };
 
         // Трансформируем данные в нужный формат
@@ -65,15 +55,10 @@ export class FundingController {
           else if (exchangeName === 'bybit') result.bybit = exchange;
           else if (exchangeName === 'bitget') result.bitget = exchange;
           else if (exchangeName === 'bingx') result.bingx = exchange;
-          else if (exchangeName === 'mexc') result.mexc = exchange;
           else if (exchangeName === 'bitmex') result.bitmex = exchange;
           else if (exchangeName === 'okx') {
             console.log('✅ getData: Добавляем OKX данные:', Object.keys(exchange).length, 'тикеров');
             result.okx = exchange;
-          }
-          else if (exchangeName === 'kraken') {
-            console.log('✅ getData: Добавляем Kraken данные:', Object.keys(exchange).length, 'тикеров');
-            // result.kraken = exchange;
           }
         });
 
@@ -82,10 +67,8 @@ export class FundingController {
           bybit: Object.keys(result.bybit).length,
           bitget: Object.keys(result.bitget).length,
           bingx: Object.keys(result.bingx).length,
-          mexc: Object.keys(result.mexc).length,
           bitmex: Object.keys(result.bitmex).length,
           okx: Object.keys(result.okx).length,
-          // kraken: Object.keys(result.kraken).length
         });
 
         return result;
@@ -93,63 +76,59 @@ export class FundingController {
     );
   }
 
-  /**
-   * GET /api/funding/getDashboard
-   * Получает данные в формате: { тикер: { биржа: данные } }
-   */
   @Get('getDashboard')
   getDashboard(): Observable<{ [ticker: string]: { [exchange: string]: TickerData | null } }> {
     return this.exchangeAggregatorService.getAllNormalizedData().pipe(
-      map(data => {
-        console.log('🔍 getDashboard: начинаем трансформацию данных...');
-        
-        // Собираем все уникальные тикеры
-        const allTickers = new Set<string>();
-        const exchanges = ['binance', 'bybit', 'bitget', 'bingx', 'mexc', 'bitmex', 'okx'];
-        
-        exchanges.forEach(exchange => {
-          const exchangeData = data[exchange as keyof typeof data];
-          if (exchangeData) {
-            Object.keys(exchangeData).forEach(ticker => allTickers.add(ticker));
-          }
-        });
+        map(data => {
+          console.log('🔍 getDashboard: начинаем трансформацию данных...');
 
-        console.log(`🔍 getDashboard: найдено ${allTickers.size} уникальных тикеров`);
+          // Собираем все уникальные тикеры
+          const allTickers = new Set<string>();
+          const exchanges = ['binance', 'bybit', 'bitget', 'bingx', 'mexc', 'bitmex', 'okx'];
 
-        // Создаем результат в новом формате
-        const result: { [ticker: string]: { [exchange: string]: TickerData | null } } = {};
-
-        allTickers.forEach(ticker => {
-          result[ticker] = {};
-          
           exchanges.forEach(exchange => {
             const exchangeData = data[exchange as keyof typeof data];
-            
-            if (exchangeData && exchangeData[ticker]) {
-              const tickerData = exchangeData[ticker];
-              result[ticker][exchange] = {
-                price: tickerData.price,
-                fundingRate: tickerData.fundingRate,
-                nextFundingTime: tickerData.nextFundingTime,
-                exchange: exchange
-              };
-            } else {
-              result[ticker][exchange] = null;
+            if (exchangeData) {
+              Object.keys(exchangeData).forEach(ticker => allTickers.add(ticker));
             }
           });
-        });
 
-        console.log('🎯 getDashboard: результат готов, тикеров:', Object.keys(result).length);
-        
-        // Логируем статистику
-        const stats: { [exchange: string]: number } = {};
-        exchanges.forEach(exchange => {
-          stats[exchange] = Object.values(result).filter(ticker => ticker[exchange] !== null).length;
-        });
-        console.log('📊 getDashboard: статистика по биржам:', stats);
+          console.log(`🔍 getDashboard: найдено ${allTickers.size} уникальных тикеров`);
 
-        return result;
-      })
+          // Создаем результат в новом формате
+          const result: { [ticker: string]: { [exchange: string]: TickerData | null } } = {};
+
+          allTickers.forEach(ticker => {
+            result[ticker] = {};
+
+            exchanges.forEach(exchange => {
+              const exchangeData = data[exchange as keyof typeof data];
+
+              if (exchangeData && exchangeData[ticker]) {
+                const tickerData = exchangeData[ticker];
+                result[ticker][exchange] = {
+                  price: tickerData.price,
+                  fundingRate: tickerData.fundingRate,
+                  nextFundingTime: tickerData.nextFundingTime,
+                  exchange: exchange
+                };
+              } else {
+                result[ticker][exchange] = null;
+              }
+            });
+          });
+
+          console.log('🎯 getDashboard: результат готов, тикеров:', Object.keys(result).length);
+
+          // Логируем статистику
+          const stats: { [exchange: string]: number } = {};
+          exchanges.forEach(exchange => {
+            stats[exchange] = Object.values(result).filter(ticker => ticker[exchange] !== null).length;
+          });
+          console.log('📊 getDashboard: статистика по биржам:', stats);
+
+          return result;
+        })
     );
   }
 
@@ -175,354 +154,8 @@ export class FundingController {
         timestamp: new Date().toISOString(),
         tickersCount: Object.keys(data).length,
         sampleTickers: Object.keys(data).slice(0, 10),
-        data: Object.fromEntries(Object.entries(data).slice(0, 5)) // Показать первые 5 для примера
+        data: Object.fromEntries(Object.entries(data).slice(0, 5))
       };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  /**
-   * GET /api/funding/kraken-test
-   * Тестирует только Kraken API
-   */
-  @Get('kraken-test')
-  async testKraken(): Promise<any> {
-    try {
-      const data = await this.krakenService.getFundingData().toPromise();
-      const safeData = data || {};
-      return {
-        success: true,
-        timestamp: new Date().toISOString(),
-        tickersCount: Object.keys(safeData).length,
-        sampleTickers: Object.keys(safeData).slice(0, 10),
-        data: Object.fromEntries(Object.entries(safeData).slice(0, 5)) // Показать первые 5 для примера
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  /**
-   * GET /api/funding/bingx-test
-   * Тестирует только BingX API с детальным логированием
-   */
-  @Get('bingx-test')
-  async testBingX(): Promise<any> {
-    try {
-      console.log('🧪 Тестируем BingX API...');
-      const data = await this.bingxService.getFundingData();
-      const tickers = Object.keys(data);
-      
-      // Анализируем funding rates
-      const nonZeroFunding = tickers.filter(ticker => data[ticker].fundingRate !== 0);
-      const fundingStats = {
-        total: tickers.length,
-        withNonZeroFunding: nonZeroFunding.length,
-        withZeroFunding: tickers.length - nonZeroFunding.length,
-        percentage: tickers.length > 0 ? ((nonZeroFunding.length / tickers.length) * 100).toFixed(2) + '%' : '0%'
-      };
-      
-      return {
-        success: true,
-        timestamp: new Date().toISOString(),
-        statistics: fundingStats,
-        sampleTickers: tickers.slice(0, 10),
-        nonZeroFundingExamples: nonZeroFunding.slice(0, 5).map(ticker => ({
-          ticker,
-          price: data[ticker].price,
-          fundingRate: data[ticker].fundingRate, // ЧИСЛО без процента
-          fundingRatePercent: (data[ticker].fundingRate * 100).toFixed(4) + '%', // Для читаемости
-          nextFundingTime: data[ticker].nextFundingTime, // ЧИСЛО в миллисекундах
-          nextFundingTimeISO: new Date(data[ticker].nextFundingTime).toISOString() // Для читаемости
-        })),
-        zeroFundingExamples: tickers.filter(ticker => data[ticker].fundingRate === 0).slice(0, 5).map(ticker => ({
-          ticker,
-          price: data[ticker].price,
-          fundingRate: '0.0000%'
-        }))
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  /**
-   * GET /api/funding/bingx-single-test?symbol=BTC-USDT
-   * Тестирует один запрос к BingX funding rate API
-   */
-  @Get('bingx-single-test')
-  async testBingXSingle(@Query('symbol') symbol: string = 'BTC-USDT'): Promise<any> {
-    try {
-      console.log(`🧪 Тестируем BingX единичный запрос для ${symbol}...`);
-      
-      const baseUrl = 'https://open-api.bingx.com';
-      
-      // Тестируем разные endpoints
-      const endpoints = [
-        {
-          name: 'premiumIndex',
-          url: `${baseUrl}/openApi/swap/v2/quote/premiumIndex?symbol=${symbol}`,
-          description: 'Премиум индекс (должен содержать funding rate)'
-        },
-        {
-          name: 'ticker',
-          url: `${baseUrl}/openApi/swap/v2/quote/ticker`,
-          description: 'Обычные тикеры (может не содержать funding rate)'
-        },
-        {
-          name: 'fundingRate',
-          url: `${baseUrl}/openApi/swap/v2/quote/fundingRate?symbol=${symbol}`,
-          description: 'Исторические funding rates'
-        }
-      ];
-      
-      const results: any = {};
-      
-      for (const endpoint of endpoints) {
-        try {
-          console.log(`🔍 Тестируем ${endpoint.name}: ${endpoint.url}`);
-          
-          const response = await axios.get(endpoint.url, {
-            timeout: 10000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-          });
-          
-          results[endpoint.name] = {
-            success: true,
-            status: response.status,
-            description: endpoint.description,
-            code: response.data.code,
-            msg: response.data.msg,
-            dataStructure: response.data.data ? Object.keys(response.data.data) : 'null',
-            sampleData: response.data.data,
-            url: endpoint.url
-          };
-          
-          console.log(`✅ ${endpoint.name}: успешно, код ${response.data.code}`);
-          
-        } catch (error) {
-          results[endpoint.name] = {
-            success: false,
-            error: error.message,
-            status: error.response?.status,
-            description: endpoint.description,
-            url: endpoint.url
-          };
-          
-          console.log(`❌ ${endpoint.name}: ошибка ${error.message}`);
-        }
-      }
-      
-      return {
-        success: true,
-        timestamp: new Date().toISOString(),
-        testedSymbol: symbol,
-        endpoints: results,
-        summary: {
-          premiumIndexWorks: results.premiumIndex?.success || false,
-          tickerWorks: results.ticker?.success || false,
-          fundingRateWorks: results.fundingRate?.success || false
-        }
-      };
-      
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  /**
-   * GET /api/funding/bitmex-debug
-   * Дебаг для анализа структуры данных BitMEX
-   */
-  @Get('bitmex-debug')
-  async testBitMEXDebug(): Promise<any> {
-    try {
-      console.log('🧪 Дебаг BitMEX API...');
-      
-      const baseUrl = 'https://www.bitmex.com/api/v1';
-      const instrumentsUrl = `${baseUrl}/instrument/active`;
-      
-      const response = await axios.get(instrumentsUrl, {
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      
-      if (!response.data || !Array.isArray(response.data)) {
-        return { error: 'Неправильный формат ответа' };
-      }
-      
-      const instruments = response.data;
-      
-      // Анализируем структуру
-      const analysis = {
-        total: instruments.length,
-        perpetualContracts: instruments.filter(i => i.typ === 'FFWCSX').length,
-        usdContracts: instruments.filter(i => i.symbol && i.symbol.includes('USD')).length,
-        usdtContracts: instruments.filter(i => i.symbol && i.symbol.includes('USDT')).length,
-        openContracts: instruments.filter(i => i.state === 'Open').length,
-        sampleSymbols: instruments.slice(0, 20).map(i => ({
-          symbol: i.symbol,
-          typ: i.typ,
-          state: i.state,
-          lastPrice: i.lastPrice,
-          settle: i.settle
-        })),
-        uniqueTypes: [...new Set(instruments.map(i => i.typ))],
-        uniqueStates: [...new Set(instruments.map(i => i.state))]
-      };
-      
-      return {
-        success: true,
-        timestamp: new Date().toISOString(),
-        analysis,
-        recommendation: analysis.usdtContracts === 0 
-          ? 'BitMEX не имеет USDT контрактов. Рекомендуется включить USD контракты.'
-          : `Найдено ${analysis.usdtContracts} USDT контрактов`
-      };
-      
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  /**
-   * GET /api/funding/bitmex-test
-   * Тестирует только BitMEX API с детальным логированием
-   */
-  @Get('bitmex-test')
-  async testBitMEX(): Promise<any> {
-    try {
-      console.log('🧪 Тестируем BitMEX API...');
-      console.log('📞 Вызываем bitmexService.getFundingData()...');
-      
-      const data = await this.bitmexService.getFundingData();
-      const tickers = Object.keys(data);
-      
-      console.log(`✅ BitMEX тест: получили ${tickers.length} тикеров`);
-      
-      // Анализируем funding rates
-      const nonZeroFunding = tickers.filter(ticker => data[ticker].fundingRate !== 0);
-      const fundingStats = {
-        total: tickers.length,
-        withNonZeroFunding: nonZeroFunding.length,
-        withZeroFunding: tickers.length - nonZeroFunding.length,
-        percentage: tickers.length > 0 ? ((nonZeroFunding.length / tickers.length) * 100).toFixed(2) + '%' : '0%'
-      };
-      
-      console.log('📊 BitMEX статистика:', fundingStats);
-      
-      return {
-        success: true,
-        timestamp: new Date().toISOString(),
-        statistics: fundingStats,
-        sampleTickers: tickers.slice(0, 10),
-        nonZeroFundingExamples: nonZeroFunding.slice(0, 5).map(ticker => ({
-          ticker,
-          price: data[ticker].price,
-          fundingRate: data[ticker].fundingRate,
-          fundingRatePercent: (data[ticker].fundingRate * 100).toFixed(4) + '%',
-          nextFundingTime: data[ticker].nextFundingTime,
-          nextFundingTimeISO: new Date(data[ticker].nextFundingTime).toISOString()
-        })),
-        allTickers: tickers // Показываем все тикеры для анализа
-      };
-    } catch (error) {
-      console.error('❌ BitMEX тест ошибка:', error);
-      return {
-        success: false,
-        error: error.message,
-        stack: error.stack,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  /**
-   * GET /api/funding/bitmex-bitcoin-debug
-   * Специальный дебаг для поиска Bitcoin на BitMEX
-   */
-  @Get('bitmex-bitcoin-debug')
-  async testBitMEXBitcoin(): Promise<any> {
-    try {
-      console.log('🧪 Дебаг Bitcoin на BitMEX...');
-      
-      const baseUrl = 'https://www.bitmex.com/api/v1';
-      const instrumentsUrl = `${baseUrl}/instrument/active`;
-      
-      const response = await axios.get(instrumentsUrl, {
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      
-      if (!response.data || !Array.isArray(response.data)) {
-        return { error: 'Неправильный формат ответа' };
-      }
-      
-      const instruments = response.data;
-      
-      // Ищем все инструменты связанные с Bitcoin
-      const bitcoinInstruments = instruments.filter(i => 
-        i.symbol && (
-          i.symbol.includes('XBT') || 
-          i.symbol.includes('BTC') ||
-          i.symbol.toLowerCase().includes('bitcoin')
-        )
-      );
-      
-      console.log('🔍 Найдено Bitcoin инструментов:', bitcoinInstruments.length);
-      
-      return {
-        success: true,
-        timestamp: new Date().toISOString(),
-        totalInstruments: instruments.length,
-        bitcoinInstruments: bitcoinInstruments.map(i => ({
-          symbol: i.symbol,
-          typ: i.typ,
-          state: i.state,
-          settlCurrency: i.settlCurrency,
-          lastPrice: i.lastPrice,
-          markPrice: i.markPrice,
-          fundingRate: i.fundingRate,
-          listing: i.listing,
-          settle: i.settle
-        })),
-        analysis: {
-          xbtInstruments: instruments.filter(i => i.symbol?.includes('XBT')).length,
-          btcInstruments: instruments.filter(i => i.symbol?.includes('BTC')).length,
-          openInstruments: instruments.filter(i => i.state === 'Open').length,
-          perpetualContracts: instruments.filter(i => i.typ === 'FFWCSX').length,
-          usdtContracts: instruments.filter(i => i.settlCurrency === 'USDt').length,
-          xbtContracts: instruments.filter(i => i.settlCurrency === 'XBt').length
-        }
-      };
-      
     } catch (error) {
       return {
         success: false,
@@ -553,11 +186,9 @@ export class FundingController {
         binance: Object.keys(data.binance).length > 0,
         bybit: Object.keys(data.bybit).length > 0,
         bitget: Object.keys(data.bitget).length > 0,
-        mexc: Object.keys(data.mexc).length > 0,
         bingx: Object.keys(data.bingx).length > 0,
         bitmex: Object.keys(data.bitmex).length > 0,
         okx: Object.keys(data.okx).length > 0,
-        kraken: Object.keys(data.kraken).length > 0,
       }))
     );
   }
@@ -587,11 +218,6 @@ export class FundingController {
             tickersCount: Object.keys(data.bitget).length,
             status: 'active'
           },
-          mexc: {
-            name: 'MEXC',
-            tickersCount: Object.keys(data.mexc).length,
-            status: 'active'
-          },
           bingx: {
             name: 'BingX',
             tickersCount: Object.keys(data.bingx).length,
@@ -606,24 +232,235 @@ export class FundingController {
             name: 'OKX',
             tickersCount: Object.keys(data.okx).length,
             status: 'active'
-          },
-          kraken: {
-            name: 'Kraken',
-            tickersCount: Object.keys(data.kraken).length,
-            status: 'active'
           }
         },
         totalUniqueTokens: new Set([
           ...Object.keys(data.binance),
           ...Object.keys(data.bybit),
           ...Object.keys(data.bitget),
-          ...Object.keys(data.mexc),
           ...Object.keys(data.bingx),
           ...Object.keys(data.bitmex),
-          ...Object.keys(data.okx),
-          ...Object.keys(data.kraken)
+          ...Object.keys(data.okx)
         ]).size
       }))
+    );
+  }
+
+  /**
+   * GET /api/funding/deltaPotentialDeals?minDelta=0.001
+   * Поиск арбитражных возможностей на основе разницы funding rates
+   */
+  @Get('deltaPotentialDeals')
+  getDeltaPotentialDeals(@Query('minDelta') minDelta?: string): Observable<any[]> {
+    const minDeltaValue = minDelta ? parseFloat(minDelta) : 0.001;
+    
+    return this.exchangeAggregatorService.getAllNormalizedData().pipe(
+      map(data => {
+        console.log('🔍 deltaPotentialDeals: начинаем поиск потенциальных сделок, minDelta:', minDeltaValue);
+        
+        // Преобразуем данные в формат { тикер: { биржа: данные } }
+        const tickersByExchange: {[ticker: string]: {[exchange: string]: any}} = {};
+        
+        Object.entries(data).forEach(([exchangeName, exchangeData]) => {
+          Object.entries(exchangeData).forEach(([ticker, tickerData]: [string, any]) => {
+            if (!tickersByExchange[ticker]) {
+              tickersByExchange[ticker] = {};
+            }
+            tickersByExchange[ticker][exchangeName] = tickerData;
+          });
+        });
+        
+        const potentialDeals: any[] = [];
+        
+        // Ищем дельту между funding rates
+        Object.entries(tickersByExchange).forEach(([ticker, exchanges]) => {
+          const exchangeNames = Object.keys(exchanges);
+          
+          // Нужно минимум 2 биржи для сравнения
+          if (exchangeNames.length < 2) return;
+          
+          const fundingRates = exchangeNames.map(exchangeName => ({
+            exchange: exchangeName,
+            rate: exchanges[exchangeName].fundingRate,
+            data: exchanges[exchangeName]
+          })).filter(item => item.rate !== null && item.rate !== undefined);
+          
+          if (fundingRates.length < 2) return;
+          
+          // Находим min и max funding rates
+          const sortedRates = fundingRates.sort((a, b) => a.rate - b.rate);
+          const minFunding = sortedRates[0];
+          const maxFunding = sortedRates[sortedRates.length - 1];
+          
+          const delta = Math.abs(maxFunding.rate - minFunding.rate);
+          
+          // Фильтруем по минимальной дельте
+          if (delta >= minDeltaValue) {
+            potentialDeals.push({
+              ticker,
+              delta,
+              deltaPercent: (delta * 100).toFixed(4) + '%',
+              exchangesCount: exchangeNames.length,
+              minFunding: {
+                exchange: minFunding.exchange,
+                rate: minFunding.rate,
+                ratePercent: (minFunding.rate * 100).toFixed(4) + '%',
+                price: minFunding.data.price,
+                nextFundingTime: minFunding.data.nextFundingTime
+              },
+              maxFunding: {
+                exchange: maxFunding.exchange,
+                rate: maxFunding.rate,
+                ratePercent: (maxFunding.rate * 100).toFixed(4) + '%',
+                price: maxFunding.data.price,
+                nextFundingTime: maxFunding.data.nextFundingTime
+              },
+              allExchanges: Object.fromEntries(
+                exchangeNames.map(name => [name, exchanges[name] || null])
+              ),
+              strategy: {
+                action: 'Арбитраж funding rates',
+                longExchange: minFunding.exchange,
+                shortExchange: maxFunding.exchange,
+                expectedProfit: (delta * 100).toFixed(4) + '% за период funding',
+                riskLevel: delta > 0.01 ? 'Высокий' : delta > 0.005 ? 'Средний' : 'Низкий'
+              }
+            });
+          }
+        });
+        
+        // Сортируем по убыванию дельты
+        const sortedDeals = potentialDeals.sort((a, b) => b.delta - a.delta);
+        
+        console.log('✅ deltaPotentialDeals: найдено сделок:', sortedDeals.length);
+        return sortedDeals;
+      })
+    );
+  }
+
+  /**
+   * GET /api/funding/timeShiftPotentialDeals?minDelta=0.001
+   * Поиск арбитражных возможностей на основе разного времени выплат
+   */
+  @Get('timeShiftPotentialDeals')
+  getTimeShiftPotentialDeals(@Query('minDelta') minDelta?: string): Observable<any[]> {
+    const minDeltaValue = minDelta ? parseFloat(minDelta) : 0.001;
+    
+    return this.exchangeAggregatorService.getAllNormalizedData().pipe(
+      map(data => {
+        console.log('🕒 timeShiftPotentialDeals: начинаем поиск временных арбитражей, minDelta:', minDeltaValue);
+        
+        // Преобразуем данные в формат { тикер: { биржа: данные } }
+        const tickersByExchange: {[ticker: string]: {[exchange: string]: any}} = {};
+        
+        Object.entries(data).forEach(([exchangeName, exchangeData]) => {
+          Object.entries(exchangeData).forEach(([ticker, tickerData]: [string, any]) => {
+            if (!tickersByExchange[ticker]) {
+              tickersByExchange[ticker] = {};
+            }
+            tickersByExchange[ticker][exchangeName] = tickerData;
+          });
+        });
+        
+        const timeShiftDeals: any[] = [];
+        
+        // Ищем разницу во времени выплат
+        Object.entries(tickersByExchange).forEach(([ticker, exchanges]) => {
+          const exchangeNames = Object.keys(exchanges);
+          
+          // Нужно минимум 2 биржи для сравнения
+          if (exchangeNames.length < 2) return;
+          
+          const fundingTimes = exchangeNames.map(exchangeName => ({
+            exchange: exchangeName,
+            time: exchanges[exchangeName].nextFundingTime,
+            rate: exchanges[exchangeName].fundingRate,
+            data: exchanges[exchangeName]
+          })).filter(item => 
+            item.time !== null && 
+            item.time !== undefined && 
+            item.rate !== null && 
+            item.rate !== undefined
+          );
+          
+          if (fundingTimes.length < 2) return;
+          
+          // Сортируем по времени
+          const sortedTimes = fundingTimes.sort((a, b) => a.time - b.time);
+          const earliestPayout = sortedTimes[0];
+          const latestPayout = sortedTimes[sortedTimes.length - 1];
+          
+          // Вычисляем разность времени в минутах
+          const timeDifferenceMs = latestPayout.time - earliestPayout.time;
+          const timeDifferenceMinutes = timeDifferenceMs / (1000 * 60);
+          
+          // Фильтруем по времени (минимум 30 минут разности)
+          if (timeDifferenceMinutes < 30) return;
+          
+          // Вычисляем дельту funding rates
+          const fundingRates = fundingTimes.map(item => item.rate);
+          const minRate = Math.min(...fundingRates);
+          const maxRate = Math.max(...fundingRates);
+          const delta = Math.abs(maxRate - minRate);
+          
+          // Фильтруем по минимальной дельте
+          if (delta >= minDeltaValue) {
+            timeShiftDeals.push({
+              ticker,
+              delta,
+              deltaPercent: (delta * 100).toFixed(4) + '%',
+              exchangesCount: exchangeNames.length,
+              timeDifference: {
+                minutes: Math.round(timeDifferenceMinutes),
+                hours: (timeDifferenceMinutes / 60).toFixed(2),
+                earliestPayout: {
+                  exchange: earliestPayout.exchange,
+                  time: earliestPayout.time,
+                  timeFormatted: new Date(earliestPayout.time).toLocaleString('ru-RU'),
+                  fundingRate: earliestPayout.rate,
+                  fundingRatePercent: (earliestPayout.rate * 100).toFixed(4) + '%'
+                },
+                latestPayout: {
+                  exchange: latestPayout.exchange,
+                  time: latestPayout.time,
+                  timeFormatted: new Date(latestPayout.time).toLocaleString('ru-RU'),
+                  fundingRate: latestPayout.rate,
+                  fundingRatePercent: (latestPayout.rate * 100).toFixed(4) + '%'
+                }
+              },
+              fundingRates: {
+                min: {
+                  exchange: fundingTimes.find(item => item.rate === minRate)?.exchange,
+                  rate: minRate,
+                  ratePercent: (minRate * 100).toFixed(4) + '%'
+                },
+                max: {
+                  exchange: fundingTimes.find(item => item.rate === maxRate)?.exchange,
+                  rate: maxRate,
+                  ratePercent: (maxRate * 100).toFixed(4) + '%'
+                }
+              },
+              allExchanges: Object.fromEntries(
+                exchangeNames.map(name => [name, exchanges[name] || null])
+              ),
+              strategy: {
+                action: 'Арбитраж по времени выплат',
+                description: 'Разные времена выплат позволяют получить funding несколько раз',
+                opportunity: `${Math.round(timeDifferenceMinutes)} минут между выплатами`,
+                expectedProfit: `${(delta * 100).toFixed(4)}% разница в funding rates`,
+                riskLevel: delta > 0.01 ? 'Высокий' : delta > 0.005 ? 'Средний' : 'Низкий',
+                timeWindow: `${(timeDifferenceMinutes / 60).toFixed(1)} часов между выплатами`
+              }
+            });
+          }
+        });
+        
+        // Сортируем по убыванию временной дельты
+        const sortedDeals = timeShiftDeals.sort((a, b) => b.timeDifference.minutes - a.timeDifference.minutes);
+        
+        console.log('✅ timeShiftPotentialDeals: найдено временных арбитражей:', sortedDeals.length);
+        return sortedDeals;
+      })
     );
   }
 }

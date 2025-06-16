@@ -109,13 +109,22 @@ export class BitMEXAdapter {
         (instrument.lastPrice || instrument.markPrice)
       ) {
         
-        // Получаем funding rate из отдельного запроса или используем 0
+        // Получаем funding rate из отдельного запроса или используем значение из инструмента
         const fundingInfo = fundingData[instrument.symbol];
-        let fundingRate = 0;
-        let nextFundingTime = this.calculateNextFundingTime();
+        let fundingRate = instrument.fundingRate || 0;
         
         if (fundingInfo && fundingInfo.fundingRate !== undefined) {
           fundingRate = fundingInfo.fundingRate;
+        }
+        
+        // Используем fundingTimestamp из инструмента если доступен
+        let nextFundingTime = this.calculateNextFundingTime();
+        if (instrument.fundingTimestamp) {
+          // Конвертируем строку формата "2025-06-16T20:00:00.000Z" в UNIX timestamp
+          const fundingDate = new Date(instrument.fundingTimestamp);
+          if (!isNaN(fundingDate.getTime())) {
+            nextFundingTime = fundingDate.getTime();
+          }
         }
         
         const price = instrument.markPrice || instrument.lastPrice || 0;
@@ -180,7 +189,17 @@ export class BitMEXAdapter {
       ) {
         
         const fundingRate = instrument.fundingRate || 0;
-        const nextFundingTime = this.calculateNextFundingTime();
+        
+        // Используем fundingTimestamp из инструмента если доступен
+        let nextFundingTime = this.calculateNextFundingTime();
+        if (instrument.fundingTimestamp) {
+          // Конвертируем строку формата "2025-06-16T20:00:00.000Z" в UNIX timestamp
+          const fundingDate = new Date(instrument.fundingTimestamp);
+          if (!isNaN(fundingDate.getTime())) {
+            nextFundingTime = fundingDate.getTime();
+          }
+        }
+        
         const price = instrument.markPrice || instrument.lastPrice || 0;
         
         if (index < 3) {

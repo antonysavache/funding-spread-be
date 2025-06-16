@@ -99,8 +99,8 @@ export class OKXService {
         ) {
           
           const fundingRate = parseFloat(item.fundingRate) || 0;
-          const nextFundingTime = item.nextFundingTime ? 
-            parseInt(item.nextFundingTime) : 
+          const nextFundingTime = item.fundingTime ? 
+            parseInt(item.fundingTime) : 
             this.calculateNextFundingTime();
           
           // Для получения цены нужно сделать дополнительный запрос

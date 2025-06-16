@@ -15,9 +15,9 @@ export interface AggregatedData {
   binance: { [ticker: string]: NormalizedTicker };
   bybit: { [ticker: string]: NormalizedTicker };
   bitget: { [ticker: string]: NormalizedTicker };
-  mexc: { [ticker: string]: NormalizedTicker };
+  bingx: { [ticker: string]: NormalizedTicker };
+  bitmex: { [ticker: string]: NormalizedTicker };
   okx: { [ticker: string]: NormalizedTicker };
-  kraken: { [ticker: string]: NormalizedTicker };
 }
 
 /**

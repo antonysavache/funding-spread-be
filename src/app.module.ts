@@ -5,11 +5,9 @@ import { FundingController } from './controllers/funding.controller';
 import { BinanceService } from './services/binance.service';
 import { BybitService } from './services/bybit.service';
 import { BitGetService } from './services/bitget.service';
-import { MexcService } from './services/mexc.service';
 import { BingXService } from './services/bingx.service';
 import { BitMEXService } from './services/bitmex.service';
 import { OKXService } from './services/okx.service';
-import { KrakenService } from './services/kraken.service';
 import { ExchangeAggregatorService } from './services/exchange-aggregator.service';
 
 @Module({
@@ -20,11 +18,9 @@ import { ExchangeAggregatorService } from './services/exchange-aggregator.servic
     BinanceService,
     BybitService,
     BitGetService,
-    MexcService,
     BingXService,
     BitMEXService,
     OKXService,
-    KrakenService,
     ExchangeAggregatorService,
   ],
 })
