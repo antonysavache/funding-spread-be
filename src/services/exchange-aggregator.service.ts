@@ -35,47 +35,70 @@ export class ExchangeAggregatorService {
    * Получает нормализованные данные со всех бирж
    */
   getAllNormalizedData(): Observable<AggregatedNormalizedData> {
+    console.log('🚀 ExchangeAggregator: Начинаем сбор данных со всех бирж...');
+    
     return forkJoin({
       binance: this.binanceService.getFundingData().pipe(
         catchError(error => {
+          console.error('❌ ExchangeAggregator: Binance ошибка:', error.message);
           return of({});
         })
       ),
       bybit: this.bybitService.getFundingData().pipe(
         catchError(error => {
+          console.error('❌ ExchangeAggregator: Bybit ошибка:', error.message);
           return of({});
         })
       ),
       bitget: this.convertToObservable(this.bitgetService.getFundingData()).pipe(
         catchError(error => {
+          console.error('❌ ExchangeAggregator: BitGet ошибка:', error.message);
           return of({});
         })
       ),
       bingx: this.convertToObservable(this.bingxService.getFundingData()).pipe(
         catchError(error => {
+          console.error('❌ ExchangeAggregator: BingX ошибка:', error.message);
           return of({});
         })
       ),
       bitmex: this.convertToObservable(this.bitmexService.getFundingData()).pipe(
         catchError(error => {
+          console.error('❌ ExchangeAggregator: BitMEX ошибка:', error.message);
           return of({});
         })
       ),
       okx: this.convertToObservable(this.okxService.getFundingData()).pipe(
         catchError(error => {
+          console.error('❌ ExchangeAggregator: OKX ошибка:', error.message);
           return of({});
         })
       )
     }).pipe(
       map(results => {
-        this.logger.log('=== РЕЗУЛЬТАТЫ АДАПТЕРОВ ===');
-        this.logger.log(`Binance тикеров: ${Object.keys(results.binance).length}`);
-        this.logger.log(`Bybit тикеров: ${Object.keys(results.bybit).length}`);
-        this.logger.log(`BitGet тикеров: ${Object.keys(results.bitget).length}`);
-        this.logger.log(`BingX тикеров: ${Object.keys(results.bingx).length}`);
-        this.logger.log(`BitMEX тикеров: ${Object.keys(results.bitmex).length}`);
-        this.logger.log(`OKX тикеров: ${Object.keys(results.okx).length}`);
-        this.logger.log('=============================');
+        console.log('📊 ДЕТАЛЬНАЯ СТАТИСТИКА ПО БИРЖАМ:');
+        console.log(`🔵 Binance: ${Object.keys(results.binance).length} тикеров`, Object.keys(results.binance).slice(0, 3));
+        console.log(`🟡 Bybit: ${Object.keys(results.bybit).length} тикеров`, Object.keys(results.bybit).slice(0, 3));
+        console.log(`🟢 BitGet: ${Object.keys(results.bitget).length} тикеров`, Object.keys(results.bitget).slice(0, 3));
+        console.log(`🟠 BingX: ${Object.keys(results.bingx).length} тикеров`, Object.keys(results.bingx).slice(0, 3));
+        console.log(`🔴 BitMEX: ${Object.keys(results.bitmex).length} тикеров`, Object.keys(results.bitmex).slice(0, 3));
+        console.log(`🟣 OKX: ${Object.keys(results.okx).length} тикеров`, Object.keys(results.okx).slice(0, 3));
+        console.log('===========================================');
+
+        // Логируем примеры данных от каждой биржи
+        if (Object.keys(results.binance).length > 0) {
+          const sampleTicker = Object.keys(results.binance)[0];
+          console.log(`💎 Binance sample (${sampleTicker}):`, results.binance[sampleTicker]);
+        } else {
+          console.log('⚠️ Binance: НЕТ ДАННЫХ - проверяем почему...');
+        }
+
+        if (Object.keys(results.bybit).length > 0) {
+          const sampleTicker = Object.keys(results.bybit)[0];
+          console.log(`💎 Bybit sample (${sampleTicker}):`, results.bybit[sampleTicker]);
+        } else {
+          console.log('⚠️ Bybit: НЕТ ДАННЫХ - проверяем почему...');
+        }
 
         return results;
       })

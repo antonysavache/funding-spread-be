@@ -166,6 +166,68 @@ export class FundingController {
   }
 
   /**
+   * GET /api/funding/binance-test
+   * Тестирует только Binance API
+   */
+  @Get('binance-test')
+  getBinanceTest(): Observable<any> {
+    console.log('🔍 Тестируем Binance отдельно...');
+    
+    return this.exchangeAggregatorService.getAllNormalizedData().pipe(
+      map(data => {
+        const binanceData = data.binance;
+        return {
+          success: Object.keys(binanceData).length > 0,
+          timestamp: new Date().toISOString(),
+          tickersCount: Object.keys(binanceData).length,
+          sampleTickers: Object.keys(binanceData).slice(0, 10),
+          sampleData: Object.fromEntries(Object.entries(binanceData).slice(0, 3)),
+          rawDataKeys: Object.keys(data),
+          allExchangesCounts: {
+            binance: Object.keys(data.binance).length,
+            bybit: Object.keys(data.bybit).length,
+            bitget: Object.keys(data.bitget).length,
+            bingx: Object.keys(data.bingx).length,
+            bitmex: Object.keys(data.bitmex).length,
+            okx: Object.keys(data.okx).length
+          }
+        };
+      })
+    );
+  }
+
+  /**
+   * GET /api/funding/bybit-test
+   * Тестирует только Bybit API
+   */
+  @Get('bybit-test')
+  getBybitTest(): Observable<any> {
+    console.log('🔍 Тестируем Bybit отдельно...');
+    
+    return this.exchangeAggregatorService.getAllNormalizedData().pipe(
+      map(data => {
+        const bybitData = data.bybit;
+        return {
+          success: Object.keys(bybitData).length > 0,
+          timestamp: new Date().toISOString(),
+          tickersCount: Object.keys(bybitData).length,
+          sampleTickers: Object.keys(bybitData).slice(0, 10),
+          sampleData: Object.fromEntries(Object.entries(bybitData).slice(0, 3)),
+          rawDataKeys: Object.keys(data),
+          allExchangesCounts: {
+            binance: Object.keys(data.binance).length,
+            bybit: Object.keys(data.bybit).length,
+            bitget: Object.keys(data.bitget).length,
+            bingx: Object.keys(data.bingx).length,
+            bitmex: Object.keys(data.bitmex).length,
+            okx: Object.keys(data.okx).length
+          }
+        };
+      })
+    );
+  }
+
+  /**
    * GET /api/funding/arbitrage?minDelta=0.001
    * Получает арбитражные возможности
    */
